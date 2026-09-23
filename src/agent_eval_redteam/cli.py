@@ -10,7 +10,8 @@ import sys
 from .adapters.repositories import Repository
 from .domain.services import EvalPlatform, RunSummary, bootstrap
 
-SUITE = ("support-core", "1.0.0")
+SUITE = ("support-core", "1.1.0")
+NEW_IN_110 = ("dup-customer-name", "contra-equal-recency", "missing-field-status", "missing-order-id")
 
 
 def _line(s: RunSummary) -> str:
@@ -32,7 +33,8 @@ async def demo(db_url: str) -> int:
 
 async def _demo(platform: EvalPlatform) -> int:
     bootstrap(platform)
-    print("Seeded suite support-core@1.0.0 (31 cases, 5 failure plans) and three reference agents.\n")
+    print("Seeded support-core@1.0.0 (31 cases) and @1.1.0 (35 cases, 5 failure plans) plus three reference "
+          "agents. The demo runs @1.1.0.\n")
 
     agents = ["support-bot@1.0.0", "support-bot@1.1.0-rc1", "support-bot-naive@0.9.0"]
     for agent_id in agents:
@@ -45,7 +47,7 @@ async def _demo(platform: EvalPlatform) -> int:
                                     requested_by="alice", idempotency_key="demo-v1.0.0")
     print("   " + _line(good))
 
-    print("\n2) Review path: release candidate with flaky citations, compared against 1.0.0")
+    print("\n2) Review path: 1.1.0-rc1 (flaky citations), gated against the last accepted run (support-bot@1.0.0)")
     rc = await platform.start_run(agent_id=agents[1], suite_id=SUITE[0], suite_version=SUITE[1],
                                   requested_by="alice", idempotency_key="demo-v1.1.0-rc1")
     print("   " + _line(rc))
@@ -56,7 +58,7 @@ async def _demo(platform: EvalPlatform) -> int:
     except Exception as exc:  # noqa: BLE001 - demo prints the refusal
         print(f"   refused: {exc}")
     rc = await platform.decide_gate(run_id=rc.run_id, approver="bob", decision="reject",
-                                    reason="Citation regressions on 10 cases; fix before release")
+                                    reason="Citation regressions on ten cases; fix before release")
     print("   after human review: " + _line(rc))
 
     print("\n3) Controlled failure path: naive agent")
@@ -65,6 +67,8 @@ async def _demo(platform: EvalPlatform) -> int:
     print("   " + _line(bad))
     for f in platform.get_findings(bad.run_id, "critical")[:5]:
         print(f"   critical: {f.statement}  (evidence {f.evidence[0].evidence_id[:8]})")
+    missed = [c for c in NEW_IN_110 if c in (bad.scorecard or {}).get("failing_cases", [])]
+    print(f"   fails the new 1.1.0 adversarial cases: {missed}")
     try:
         await platform.decide_gate(run_id=bad.run_id, approver="bob", decision="approve", reason="ship it anyway")
     except Exception as exc:  # noqa: BLE001
@@ -75,7 +79,7 @@ async def _demo(platform: EvalPlatform) -> int:
                                           failure_type="timeout", requested_by="alice")
     print(f"   passed={score.passed} recovery: {score.dimensions['recovery'].detail}")
 
-    report = platform.regression_report("support-bot", SUITE[0])
+    report = platform.regression_report("support-bot", SUITE[0], SUITE[1])
     print(f"\n5) Regression monitor for support-bot: {[r['pass_rate'] for r in report['runs']]}")
     for alert in report["alerts"]:
         print(f"   alert: {alert}")

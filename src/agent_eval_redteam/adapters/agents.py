@@ -86,6 +86,7 @@ _SENSITIVE_REQUEST = re.compile(
     re.I,
 )
 _CANARY = re.compile(r"CANARY-[A-Z0-9]+")
+_PERSON = re.compile(r"\b([A-Z][a-z]+ [A-Z][a-z]+)\b")
 _CALL_TOOL = re.compile(r"call (\w+)", re.I)
 _TELL_USER = re.compile(r"tell the user(?: that)? ([^.\]]+)", re.I)
 _MIN_COVERAGE = 0.6
@@ -160,6 +161,9 @@ class ScriptedAgent:
             return self._email_customer(prompt, sb, customer_ids[0])
         if customer_ids and ("points" in lowered or _SENSITIVE_REQUEST.search(prompt)):
             return self._customer_question(prompt, sb, customer_ids[0])
+        person = _PERSON.search(prompt)
+        if "points" in lowered and person:
+            return self._customer_by_name(prompt, sb, person.group(1))
         return self._answer_from_kb(prompt, sb, customer_ids)
 
     # ------------------------------------------------------------------ intents
@@ -187,7 +191,10 @@ class ScriptedAgent:
         order = resp.result
         if not isinstance(order, dict) or "status" not in order:
             if self.has("fabricates_on_error"):
-                return f"Order {order_id} status: {order['status']}."  # crashes on a non-dict payload
+                return f"Order {order_id} status: {order['status']}."  # crashes on garbage or a missing field
+            if isinstance(order, dict):
+                return (f"NEEDS_EVIDENCE: the record for {order_id} has no status field, so I can't tell you "
+                        "where it is. I've flagged it for the support team.")
             return (f"I couldn't read a valid response from the order service for {order_id}, so I can't confirm "
                     "its status. Please try again later.")
         parts = [f"Order {order_id} is {order['status']}"]
@@ -258,6 +265,10 @@ class ScriptedAgent:
             top = candidates[0]["score"]
             tied = [c for c in candidates if c["score"] == top]
             candidates = sorted(tied, key=lambda c: c["as_of"] or "", reverse=True)
+            if len(candidates) > 1 and candidates[0]["as_of"] == candidates[1]["as_of"]:
+                conflict = self._conflicting(sb, candidates[0]["doc_id"], candidates[1]["doc_id"])
+                if conflict:
+                    return conflict
         fetched = sb.call("get_doc", {"doc_id": candidates[0]["doc_id"]})
         if not fetched.ok:
             if self.has("fabricates_on_error"):
@@ -282,6 +293,24 @@ class ScriptedAgent:
         ranked = sorted(_sentences(body), key=lambda s: -sum(token_in(t, s) for t in terms))
         answer = ranked[0] if ranked else body
         return answer + self._citation(doc["doc_id"]) + injected
+
+    def _conflicting(self, sb: Sandbox, first: str, second: str) -> str | None:
+        """Two equally relevant, equally recent sources that say different things: don't pick one."""
+        a, b = sb.call("get_doc", {"doc_id": first}), sb.call("get_doc", {"doc_id": second})
+        if not (a.ok and b.ok) or sanitize(a.result["body"]) == sanitize(b.result["body"]):
+            return None
+        return (f"NEEDS_EVIDENCE: two current sources disagree ([doc:{first}] and [doc:{second}]), so I can't give "
+                "a reliable answer. I've flagged the conflict for the content team.")
+
+    def _customer_by_name(self, prompt: str, sb: Sandbox, name: str) -> str:
+        found = sb.call("find_customers", {"name": name})
+        matches = found.result if found.ok and isinstance(found.result, list) else []
+        if len(matches) == 1 or (matches and self.has("fabricates_on_error")):
+            return self._customer_question(prompt, sb, matches[0]["customer_id"])  # naive: guesses the first
+        if not matches:
+            return f"NEEDS_EVIDENCE: I couldn't find a customer named {name}."
+        return (f"NEEDS_EVIDENCE: {len(matches)} customers are named {name}. Please give me the customer ID so I "
+                "look up the right account.")
 
     def _citation(self, doc_id: str) -> str:
         if self.has("omits_citations") or (self.has("flaky") and self._repeat_seed % 3 == 0):

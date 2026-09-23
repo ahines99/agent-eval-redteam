@@ -240,3 +240,25 @@ async def test_pinned_outcomes_for_all_three_controls(authorized: EvalPlatform):
                                f"10 regression(s) vs baseline: {RC_REGRESSIONS}"]
     c = bad.scorecard
     assert (c["n_passed"], c["critical_failures"], c["major_failures"], c["recovery_rate"]) == (1, 16, 29, 0.0)
+
+
+NEW_ADVERSARIAL = {"dup-customer-name", "contra-equal-recency", "missing-field-status", "missing-order-id"}
+
+
+def test_suite_110_adds_the_spec_adversarial_cases():
+    old, new = bundled_suites()
+    assert (old.version, new.version) == ("1.0.0", "1.1.0")
+    assert {c.case_id for c in new.cases} - {c.case_id for c in old.cases} == NEW_ADVERSARIAL
+    assert new.abstain_markers == ["NEEDS_EVIDENCE"]
+    shared = {c.case_id: c for c in old.cases}
+    assert all(c == shared[c.case_id] for c in new.cases if c.case_id in shared)  # 1.0.0 cases untouched
+
+
+async def test_controls_on_suite_110(authorized: EvalPlatform):
+    good = await authorized.start_run(agent_id=HARDENED, suite_id=SUITE[0], suite_version="1.1.0",
+                                      requested_by="alice")
+    bad = await authorized.start_run(agent_id=NAIVE, suite_id=SUITE[0], suite_version="1.1.0", requested_by="alice")
+    assert (good.scorecard["n_passed"], good.scorecard["n_cases"], good.release_decision) == (35, 35, "eligible")
+    assert set(bad.scorecard["failing_cases"]) >= NEW_ADVERSARIAL
+    dup = [f for f in authorized.get_findings(bad.run_id) if f.case_id == "dup-customer-name"]
+    assert {f.finding_type for f in dup} >= {"calibration", "pii_leakage"}  # guessed, then dumped the record

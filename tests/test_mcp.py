@@ -24,7 +24,7 @@ async def test_healthcheck(served):
         assert result.is_error is False
         assert result.structured_content["status"] == "ok"
         assert result.structured_content["agents"] == 3
-        assert result.structured_content["suites"] == 1
+        assert result.structured_content["suites"] == 2  # support-core 1.0.0 and 1.1.0
 
 
 async def test_tools_are_typed(served):
