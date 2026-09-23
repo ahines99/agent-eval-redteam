@@ -236,3 +236,46 @@ async def test_scoring_step_fails_closed_without_traces(authorized: EvalPlatform
     ctx = RunContext(run_id=run_id, run=authorized.repo.get_run(run_id), actor="alice")
     with pytest.raises(RuntimeError, match="no traces"):
         await score_traces(ctx, authorized.env)
+
+
+@pytest.mark.parametrize("step", PROJECT_STEPS)
+async def test_every_step_has_a_controlled_failure_path(authorized: EvalPlatform, step: str):
+    """Any step can fail: the run lands in FAILED with the step named, earlier artifacts kept, later ones absent."""
+    run_id = f"00000000-0000-0000-0000-{PROJECT_STEPS.index(step):012d}"
+    authorized.repo.create_run(run_id=run_id, agent_id=HARDENED, suite_id=SUITE[0], suite_version=SUITE[1],
+                               requested_by="alice", idempotency_key=None, baseline_run_id=None)
+
+    async def broken(ctx, env) -> StepResult:
+        raise RuntimeError(f"{step} dependency unavailable")
+
+    assert await run_primary(run_id, authorized.env, actor="alice", overrides={step: broken}) == "failed"
+    summary = authorized.get_run(run_id)
+    index = PROJECT_STEPS.index(step)
+    assert summary.error.startswith(f"{step}: RuntimeError")
+    assert [s.done for s in summary.steps] == [True] * index + [False] * (len(PROJECT_STEPS) - index)
+    assert (await authorized.resume_run(run_id, actor="alice")).status == "complete"
+
+
+async def test_inject_failures_step_fails_cleanly_on_a_harness_error(authorized: EvalPlatform):
+    from agent_eval_redteam.adapters.agents import HarnessError
+
+    class BreaksUnderInjection(ScriptedAgent):
+        def classify_error(self, exc):
+            return "harness" if isinstance(exc, HarnessError) else "agent"
+
+        async def run(self, prompt, sandbox, *, repeat):
+            if sandbox.failure is not None:
+                raise HarnessError("failure-injection proxy unreachable")
+            return await super().run(prompt, sandbox, repeat=repeat)
+
+    authorized.env.adapter_factory = lambda agent: BreaksUnderInjection([])
+    summary = await run(authorized, HARDENED)
+    assert summary.status == "failed" and summary.error.startswith("Inject failures: HarnessError")
+    assert authorized.repo.traces_for(summary.run_id, ("injected",)) == []
+
+
+async def test_gate_decision_links_to_the_findings_behind_it(authorized: EvalPlatform):
+    bad = await run(authorized, NAIVE)
+    gate = authorized.get_artifact(bad.run_id, "Gate release")["payload"]
+    critical = {f.finding_id for f in authorized.get_findings(bad.run_id, "critical")}
+    assert set(gate["finding_ids"]) == critical and len(critical) == 16

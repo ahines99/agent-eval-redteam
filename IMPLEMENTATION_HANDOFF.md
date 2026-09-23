@@ -1,6 +1,29 @@
 # 14. Agent Evaluation and Red-Team Platform
 
-> **Revision 2026-09-23: feasibility pass.** The first vertical slice is implemented. The code skeletons
+> **Revision 2026-09-23 (b): audit remediation.** A three-part audit (correctness, security, requirements)
+> reported 32 findings: 4 high, 12 medium, 16 low. Some overlap between auditors. It also listed 11 test
+> gaps, and found that this document overstated completion. All of them are fixed on branch
+> `audit-fixes`, one commit per batch, each finding with a regression test. The main behavioural changes
+> are:
+>
+> - **Authorization:** decided from case *content*, not the category label, and re-checked before every
+>   agent call.
+> - **Gating baseline:** always the last accepted run of the same agent on the same *suite version*.
+>   Caller-chosen baselines are informational only.
+> - **Blocked versions stay blocked** on every suite.
+> - **Actor identities** are normalised before separation of duties is checked.
+> - **Synthetic-PII checks** are strict and separator-agnostic.
+> - **Scorers:** matching is whole-phrase, abnormal stops are scored, and email recipients may only receive
+>   their own data.
+> - **API errors** are classified as transient, harness or agent.
+> - **New suite `support-core@1.1.0`** adds the duplicate-entity, contradictory-evidence and missing-field
+>   cases this plan required.
+> - **Versions:** `gate-policy/1.1` and `scoring/1.1`, and schema version 1.1 stamped on traces and
+>   artifacts.
+>
+> Deferred by decision: signed (HMAC) hashes; see `docs/threat_model.md`.
+>
+> **Revision 2026-09-23 (a): feasibility pass.** The first vertical slice is implemented. The code skeletons
 > further down are the original plan and are superseded by the code in `src/agent_eval_redteam/`. This
 > section records where the plan changed and why.
 >
@@ -12,12 +35,13 @@
 > | fastapi, uvicorn, httpx, structlog, psycopg as hard deps | Unused; MCP SDK v2 already provides the ASGI app and HTTP client | Trimmed to mcp, pydantic, sqlalchemy, opentelemetry-api; optional extras `claude`, `postgres`, `dev` |
 > | pytest-asyncio `asyncio_mode=auto` alongside `@pytest.mark.anyio` | Two async plugins fighting over the same tests | anyio only (`-p no:asyncio`), matching the MCP SDK |
 > | "Compare versions" and "Monitor regressions" as linear steps in one run | Both need run history that didn't exist | `run_metrics` table; comparison uses an explicit baseline or the last *accepted* run; monitoring alerts on drops vs the history median and on recurring failures |
-> | Approval boundaries as a string in a resource | Not enforced | Policy engine enforces all four, server-side and fail-closed (see `domain/policies.py`) |
-> | LLM-based scoring implied by "factuality/citation quality" | Non-reproducible verdicts | All 10 dimensions deterministic; the only model is the agent under test |
+> | Approval boundaries as a string in a resource | Not enforced | Enforced server-side and fail-closed: production, authorization and gate rules in `domain/policies.py`, synthetic-PII validation in `domain/pii.py`, suite immutability in `domain/services.py` |
+> | LLM-based scoring implied by "factuality/citation quality" | Non-reproducible verdicts | 10 deterministic per-trace dimensions: the mission's list with "repeatability" computed as a scorecard aggregate instead, plus calibration (abstaining when evidence is insufficient). The only model is the agent under test |
 > | Four identical placeholder Skills | Not "dynamically useful" | Each Skill has its own procedure, decision tables and tool names; `security-redteam` ships a case-authoring reference |
 >
-> **Acceptance status:** everything in the checklist at the end of this file is met and covered by tests
-> (41 passing on Python 3.12 and 3.14), except the Milestone 5 items marked there as open.
+> **Acceptance status (after remediation):** see the checklist at the end of this file. Each item now names
+> the test that proves it. Test suite: 156 tests, 96% line coverage. Milestone 5 items are listed as open
+> there.
 
 ## Implementation-agent handoff
 
@@ -557,24 +581,68 @@ Never log secrets or raw sensitive payloads. Store hashes/IDs where possible.
 - README section titled `Why this is not just a chatbot`.
 
 ## Acceptance checklist
-- [x] Register system has a deterministic artifact, audit event, and failure path.
-- [x] Load eval suite has a deterministic artifact, audit event, and failure path.
-- [x] Run baseline has a deterministic artifact, audit event, and failure path.
-- [x] Inject failures has a deterministic artifact, audit event, and failure path.
-- [x] Score traces has a deterministic artifact, audit event, and failure path.
-- [x] Compare versions/models has a deterministic artifact, audit event, and failure path.
-- [x] Gate release has a deterministic artifact, audit event, and failure path.
-- [x] Monitor regressions has a deterministic artifact, audit event, and failure path.
-- [x] Every material recommendation includes supporting evidence or explicitly says evidence is insufficient.
-- [x] All irreversible actions are disabled or human-approved.
-- [x] MCP tools have typed schemas and integration tests.
-- [x] At least one Skill is dynamically useful and not just duplicate prompt text.
-- [x] All arithmetic/financial/statistical calculations have deterministic tests.
-- [x] The demo can survive one injected tool failure.
 
-Open (Milestone 5 polish): Dockerfile/compose (not verifiable on the dev machine, which has no Docker),
-recorded 3-minute demo, authentication in front of the HTTP transport (see `docs/threat_model.md`),
-Alembic migrations.
+Each item names the test(s) that prove it (files under `tests/`).
+
+- [x] **Every step has a deterministic artifact, an audit event and a failure path.** This covers all eight:
+      Register system, Load eval suite, Run baseline, Inject failures, Score traces, Compare versions/models,
+      Gate release and Monitor regressions.
+      - Artifacts and audit events: `test_every_step_leaves_a_hashed_artifact_and_audit_event`.
+      - A controlled failure and resume for each step:
+        `test_every_step_has_a_controlled_failure_path[...]` (parametrised over all eight).
+      - Natural failure paths:
+        - Register system: `test_agent_config_tampering_fails_the_run`.
+        - Load eval suite: `test_suite_tampering_fails_closed`.
+        - Run baseline: `test_resume_after_authorization_expiry_makes_no_agent_calls`,
+          `test_bad_credentials_fail_the_run_without_blaming_the_agent`.
+        - Inject failures: `test_inject_failures_step_fails_cleanly_on_a_harness_error`.
+        - Score traces: `test_step_dependency_failure_retries_then_fails_then_resumes`,
+          `test_scoring_step_fails_closed_without_traces`.
+        - Compare versions/models: `test_explicit_baseline_must_be_scored`.
+- [x] **Every material recommendation includes supporting evidence or explicitly says evidence is
+      insufficient.**
+      - Findings link to hashed trace evidence: `test_provenance_links_and_tamper_detection`.
+      - Gate decisions list the finding ids behind them:
+        `test_gate_decision_links_to_the_findings_behind_it`.
+      - The `review_run` prompt requires `NEEDS_EVIDENCE`.
+- [x] **All irreversible actions are disabled or human-approved.**
+      - Privileged sandbox tools fail closed, even under failure injection.
+      - Destructive injection is refused.
+      - The release gate records a human decision and deploys nothing.
+      - Tests: `test_privileged_tools_fail_closed_even_under_injection`,
+        `test_destructive_injection_is_refused`.
+- [x] **MCP tools have typed schemas and integration tests.** All 14 tools, 4 resources and 3 prompts are
+      exercised through the in-process MCP client (`test_mcp.py`, `test_mcp_surface.py`).
+- [x] **At least one Skill is dynamically useful and not just duplicate prompt text.** The four Skills have
+      distinct procedures and decision tables, and they name only tools, fields and rules that exist
+      (re-checked in the audit).
+- [x] **All arithmetic/financial/statistical calculations have deterministic tests.** Wilson interval,
+      percentile, `aggregate`, `compare`, regression alerts, and cost estimation (`test_calculations.py`,
+      `test_policies_and_stats.py`).
+- [x] **The demo can survive one injected tool failure.**
+      - Demo step 4.
+      - Sandbox failure plans in every run.
+      - Harness failures: `test_overloaded_api_is_retried_not_scored`,
+        `test_partial_baseline_is_resumed_without_duplicates`.
+- [x] **Golden dataset of at least 25 cases, including adversarial cases** for prompt injection, stale
+      data, duplicate entities, contradictory evidence and missing required fields. That's
+      `support-core@1.1.0` with 35 cases (`test_suite_110_adds_the_spec_adversarial_cases`,
+      `test_controls_on_suite_110`).
+- [x] **Observability.**
+      - Every run records `run_id`, step, tool, model, latency, tokens and cost in traces and spans.
+      - Schema version is on traces and audit events; the evidence ids that were read are recorded.
+      - Approval, failure and retry events are audited.
+      - Test: `test_schema_scoring_version_and_evidence_reads_are_audited`.
+
+Not met (security section): least-privilege service accounts and tenant scoping. There is no
+authentication layer yet, so these depend on the deployment decision recorded in `docs/threat_model.md`.
+
+Open (Milestone 5 polish):
+- Dockerfile/compose (not verifiable on the dev machine, which has no Docker)
+- a recorded 3-minute demo
+- authentication in front of the HTTP transport
+- Alembic migrations
+- a first evaluation against the live Claude API
 
 ## First implementation-agent tasks
 

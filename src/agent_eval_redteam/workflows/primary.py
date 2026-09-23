@@ -334,7 +334,11 @@ async def gate_release(ctx: RunContext, env: EvalEnvironment) -> StepResult:
         if gate and gate["payload"]["decision"]["outcome"] == GateOutcome.BLOCK:
             prior_blocks.append(other["run_id"])
     decision = evaluate_gate(card, gating, prior_blocks)
-    return StepResult({"decision": decision.model_dump(mode="json")}, pause=decision.outcome is GateOutcome.REVIEW)
+    # The findings behind the decision, so every gate reason traces back to stored evidence.
+    relevant = {GateOutcome.BLOCK: {"critical"}, GateOutcome.REVIEW: {"major", "minor"}}.get(decision.outcome, set())
+    finding_ids = [f.finding_id for f in env.repo.findings_for(ctx.run_id) if f.severity in relevant]
+    return StepResult({"decision": decision.model_dump(mode="json"), "finding_ids": finding_ids,
+                       "prior_blocks": prior_blocks}, pause=decision.outcome is GateOutcome.REVIEW)
 
 
 async def monitor_regressions(ctx: RunContext, env: EvalEnvironment) -> StepResult:
