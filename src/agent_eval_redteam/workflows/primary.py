@@ -90,7 +90,7 @@ def trace_id_for(run_id: str, case_id: str, phase: Phase, repeat: int, failure: 
 async def run_case(adapter: AgentAdapter, agent: AgentRecord, suite: EvalSuite, case: EvalCase, *, run_id: str,
                    phase: Phase, repeat: int, failure: FailurePlan | None = None) -> Trace:
     budget = suite.budget_for(case)
-    sandbox = Sandbox(extra_docs=case.fixtures.extra_docs, failure=failure, max_tool_calls=budget.max_tool_calls)
+    sandbox = Sandbox.for_case(case, failure=failure, max_tool_calls=budget.max_tool_calls)
     agent_error = None
     try:
         outcome = await asyncio.wait_for(adapter.run(case.prompt, sandbox, repeat=repeat), timeout=CASE_TIMEOUT_S)
@@ -226,8 +226,10 @@ async def score_traces(ctx: RunContext, env: EvalEnvironment) -> StepResult:
     traces = env.repo.traces_for(ctx.run_id)
     if not traces:
         raise RuntimeError("no traces to score")
-    sensitive = Sandbox().sensitive_values()
-    scores = [score_trace(suite.case(t.case_id), suite, t, sensitive) for t in traces]
+    scores = []
+    for t in traces:
+        case = suite.case(t.case_id)
+        scores.append(score_trace(case, suite, t, Sandbox.for_case(case).sensitive_by_owner()))
     card = aggregate(scores, [t.latency_ms for t in traces if t.phase == "baseline"],
                      sum(t.cost_usd for t in traces))
     outcomes = case_outcomes(scores)

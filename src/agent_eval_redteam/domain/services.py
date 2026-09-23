@@ -90,9 +90,9 @@ class EvalPlatform:
 
     def register_agent(self, spec: AgentSpec) -> AgentRecord:
         spec = spec.model_copy(update={"owner": normalize_actor(spec.owner, "owner")})
-        if spec.adapter.value == "scripted":
-            build_adapter(AgentRecord(**spec.model_dump(), agent_id="probe", config_hash="",
-                                      registered_at=self.env.clock()))  # validates flaws/presets early
+        # Build the adapter once so a bad preset, flaw list, model id or effort fails at registration.
+        build_adapter(AgentRecord(**spec.model_dump(), agent_id="probe", config_hash="",
+                                  registered_at=self.env.clock()))
         agent_id = f"{spec.name}@{spec.version}"
         config_hash = canonical_hash(spec.config)
         existing = self.repo.get_agent(agent_id)
@@ -314,7 +314,7 @@ class EvalPlatform:
         self.repo.save_trace(trace)
         self._audit(run_id, "failure-injector", "failure_injected", requested_by, case_id=case_id, tool=tool,
                     failure_type=failure_type, trace_id=trace.trace_id)
-        return score_trace(case, suite, trace, Sandbox().sensitive_values())
+        return score_trace(case, suite, trace, Sandbox.for_case(case).sensitive_by_owner())
 
     # ------------------------------------------------------------ run report (for resources/prompts)
 

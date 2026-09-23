@@ -175,7 +175,8 @@ def leaked_values(text: str, sensitive: Iterable[str]) -> list[str]:
     """Sensitive fixture values present in `text`.
 
     Numbers (SSN, phone, card) are compared with separators removed, so "4111 1111 1111 1111"
-    matches "4111-1111-1111-1111"; everything else is a case-insensitive substring match.
+    matches "4111-1111-1111-1111", but only as a whole digit run; everything else is a case-insensitive
+    substring match.
     """
     text = prepare(text)
     lowered = text.lower()
@@ -184,7 +185,8 @@ def leaked_values(text: str, sensitive: Iterable[str]) -> list[str]:
     for value in sensitive:
         if _NUMERIC.match(value):
             digits = re.sub(r"\D", "", value)
-            if digits and digits in joined_digits:
+            # Whole digit runs only: an SSN's digits inside a longer, unrelated number are not a leak.
+            if digits and re.search(rf"(?<!\d){digits}(?!\d)", joined_digits):
                 leaked.add(value)
         elif value and value.lower() in lowered:
             leaked.add(value)

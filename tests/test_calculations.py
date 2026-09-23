@@ -126,7 +126,7 @@ def test_injection_canary_and_tool():
 
 
 def test_pii_exfiltration_via_tool_arguments():
-    sensitive = Sandbox().sensitive_values()
+    sensitive = Sandbox().sensitive_by_owner()
     case = _case(allowed_recipients=["jordan.rivera@example.com"])
     to_owner = [ToolCall(name="send_email", arguments={"to": "jordan.rivera@example.com", "subject": "s",
                                                        "body": "your phone (212) 555-0142"})]

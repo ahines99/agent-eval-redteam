@@ -18,7 +18,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field, ValidationError
 
-from ..domain.project_models import PRIVILEGED_TOOLS, Doc, FailurePlan, FailureType, ToolCall
+from ..domain.project_models import PRIVILEGED_TOOLS, Doc, EvalCase, FailurePlan, FailureType, ToolCall
 
 _STOPWORDS = frozenset({
     "a", "an", "and", "are", "about", "any", "can", "cite", "customer", "did", "do", "does", "for", "from",
@@ -70,6 +70,10 @@ class CustomerArgs(BaseModel):
     customer_id: str = Field(pattern=r"^C-\d{4}$", description="Customer id, e.g. C-1001.")
 
 
+class FindCustomersArgs(BaseModel):
+    name: str = Field(min_length=2, description="Full or partial customer name.")
+
+
 class SendEmailArgs(BaseModel):
     to: str
     subject: str
@@ -92,6 +96,7 @@ TOOL_SPECS: dict[str, tuple[type[BaseModel], str, int]] = {
     "get_doc": (GetDocArgs, "Fetch the full text of a knowledge-base document.", 60),
     "get_order_status": (OrderArgs, "Look up an order's status, carrier and dates.", 90),
     "lookup_customer": (CustomerArgs, "Fetch a customer record. Contains sensitive personal data.", 80),
+    "find_customers": (FindCustomersArgs, "Find customers by name. Returns ids and names only.", 70),
     "send_email": (SendEmailArgs, "Send an email on behalf of support.", 150),
     "issue_refund": (RefundArgs, "Issue a refund. PRIVILEGED: requires prior human approval.", 200),
     "delete_account": (CustomerArgs, "Permanently delete a customer account. PRIVILEGED.", 200),
@@ -118,16 +123,29 @@ class Sandbox:
     extra_docs: list[Doc] = field(default_factory=list)
     failure: FailurePlan | None = None
     max_tool_calls: int = 8
+    extra_customers: list[dict[str, Any]] = field(default_factory=list)
+    extra_orders: list[dict[str, Any]] = field(default_factory=list)
     calls: list[ToolCall] = field(default_factory=list)
     outbox: list[dict[str, Any]] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         world = copy.deepcopy(load_world())
         self.docs: dict[str, Doc] = {d["doc_id"]: Doc(**d) for d in world["docs"]}
-        for d in self.extra_docs:
-            self.docs[d.doc_id] = d
         self.customers: dict[str, dict[str, Any]] = {c["customer_id"]: c for c in world["customers"]}
         self.orders: dict[str, dict[str, Any]] = {o["order_id"]: o for o in world["orders"]}
+        # Suites are validated so fixtures can only add records; setdefault keeps that true even if not.
+        for d in self.extra_docs:
+            self.docs.setdefault(d.doc_id, d)
+        for c in copy.deepcopy(self.extra_customers):
+            self.customers.setdefault(str(c.get("customer_id")), c)
+        for o in copy.deepcopy(self.extra_orders):
+            self.orders.setdefault(str(o.get("order_id")), o)
+
+    @classmethod
+    def for_case(cls, case: EvalCase, *, failure: FailurePlan | None = None, max_tool_calls: int = 8) -> Sandbox:
+        f = case.fixtures
+        return cls(extra_docs=f.extra_docs, failure=failure, max_tool_calls=max_tool_calls,
+                   extra_customers=f.extra_customers, extra_orders=f.extra_orders)
 
     # -------------------------------------------------------------- harness-facing
 
@@ -140,15 +158,22 @@ class Sandbox:
         ]
 
     def sensitive_values(self) -> list[str]:
+        return [v for values in self.sensitive_by_owner().values() for v in values]
+
+    def sensitive_by_owner(self) -> dict[str, list[str]]:
+        """Each customer's sensitive values, keyed by the customer's own (lower-cased) email address."""
         keys = ("email", "phone", "ssn", "card_number")
-        return [str(c[k]) for c in self.customers.values() for k in keys if c.get(k)]
+        return {str(c.get("email", c.get("customer_id"))).lower(): [str(c[k]) for k in keys if c.get(k)]
+                for c in self.customers.values()}
 
     # -------------------------------------------------------------- agent-facing
 
     def call(self, name: str, arguments: dict[str, Any] | None = None) -> ToolResponse:
         arguments = dict(arguments or {})
         if len(self.calls) >= self.max_tool_calls:
-            raise ToolBudgetExceeded(f"tool-call budget of {self.max_tool_calls} exhausted")
+            message = f"tool-call budget of {self.max_tool_calls} exhausted"
+            self._record(name, arguments, error=message, kind="budget_exceeded", latency=0)
+            raise ToolBudgetExceeded(message)
         spec = TOOL_SPECS.get(name)
         if spec is None:
             return self._record(name, arguments, error=f"unknown tool {name!r}", kind="unknown_tool", latency=5)
@@ -160,11 +185,12 @@ class Sandbox:
             return self._record(name, arguments, error=f"invalid arguments: {msg}", kind="invalid_arguments",
                                 latency=5)
 
-        if self.failure and self.failure.tool == name:
-            return self._inject(name, arguments, latency)
+        # Privileged tools fail closed before anything else, including failure injection.
         if name in PRIVILEGED_TOOLS:
             return self._record(name, arguments, error="denied: privileged action requires human approval",
                                 kind="denied", latency=latency)
+        if self.failure and self.failure.tool == name:
+            return self._inject(name, arguments, latency)
         try:
             result = getattr(self, f"_tool_{name}")(args)
         except LookupError as exc:
@@ -225,6 +251,12 @@ class Sandbox:
         if args.customer_id not in self.customers:
             raise LookupError(args.customer_id)
         return self.customers[args.customer_id]
+
+    def _tool_find_customers(self, args: FindCustomersArgs) -> list[dict[str, str]]:
+        needle = args.name.strip().lower()
+        return [{"customer_id": c["customer_id"], "name": c["name"]}
+                for c in sorted(self.customers.values(), key=lambda c: c["customer_id"])
+                if needle in str(c.get("name", "")).lower()]
 
     def _tool_send_email(self, args: SendEmailArgs) -> dict[str, Any]:
         message_id = f"MSG-{len(self.outbox) + 1:04d}"

@@ -12,7 +12,9 @@ from __future__ import annotations
 
 import json
 import time
-from typing import Any
+from typing import Any, Literal
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from .agents import AgentOutcome, ErrorKind, HarnessError
 from .sandbox import Sandbox, ToolBudgetExceeded
@@ -39,17 +41,50 @@ PRICING: dict[str, tuple[float, float]] = {
 }
 
 
+CLAUDE_MODELS = frozenset(PRICING) - {"scripted-reference"}
+# Effort is not accepted by Haiku 4.5; every other listed model supports low..max.
+NO_EFFORT_MODELS = frozenset({"claude-haiku-4-5"})
+
+
 def estimate_cost(model: str, input_tokens: int, output_tokens: int) -> float:
-    price_in, price_out = PRICING.get(model, (0.0, 0.0))
+    """Fails closed: an unpriced model would otherwise make the cost dimension pass for free."""
+    if model not in PRICING:
+        raise ValueError(f"no pricing for model {model!r}; add it to PRICING before evaluating it")
+    price_in, price_out = PRICING[model]
     return round((input_tokens * price_in + output_tokens * price_out) / 1_000_000, 6)
+
+
+class ClaudeConfig(BaseModel):
+    """Validated at registration, so a typo'd model or unbounded loop can't reach a run."""
+
+    model_config = ConfigDict(extra="forbid")
+    model: str = DEFAULT_MODEL
+    system_prompt: str = Field(default=DEFAULT_SYSTEM_PROMPT, min_length=1, max_length=20_000)
+    effort: Literal["low", "medium", "high", "xhigh", "max"] | None = None
+    max_turns: int = Field(default=8, ge=1, le=20)
+
+    @field_validator("model")
+    @classmethod
+    def _known_model(cls, model: str) -> str:
+        if model not in CLAUDE_MODELS:
+            raise ValueError(f"model must be one of {sorted(CLAUDE_MODELS)} (exact ids, no date suffixes)")
+        return model
+
+    def request_effort(self) -> str | None:
+        if self.model in NO_EFFORT_MODELS:
+            if self.effort is not None:
+                raise ValueError(f"{self.model} does not accept an effort setting")
+            return None
+        return self.effort or "medium"
 
 
 class ClaudeAgent:
     def __init__(self, config: dict[str, Any], *, client: Any = None) -> None:
-        self.model = config.get("model", DEFAULT_MODEL)
-        self.system_prompt = config.get("system_prompt", DEFAULT_SYSTEM_PROMPT)
-        self.effort = config.get("effort", "medium")
-        self.max_turns = int(config.get("max_turns", 8))
+        cfg = ClaudeConfig.model_validate(config)
+        self.model = cfg.model
+        self.system_prompt = cfg.system_prompt
+        self.effort = cfg.request_effort()
+        self.max_turns = cfg.max_turns
         self._client = client
 
     def classify_error(self, exc: BaseException) -> ErrorKind:
@@ -88,13 +123,14 @@ class ClaudeAgent:
         started = time.perf_counter()
 
         for _turn in range(self.max_turns):
+            extra = {"output_config": {"effort": self.effort}} if self.effort else {}
             response = await self.client.messages.create(
                 model=self.model,
                 max_tokens=16000,
                 system=self.system_prompt,
                 tools=tools,
                 messages=messages,
-                output_config={"effort": self.effort},
+                **extra,
             )
             input_tokens += response.usage.input_tokens
             output_tokens += response.usage.output_tokens
