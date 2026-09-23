@@ -241,7 +241,7 @@ async def test_live_adapter_plugs_into_the_full_workflow(authorized):
     authorized.env.adapter_factory = lambda agent: ClaudeAgent(agent.config,
                                                                client=SimpleNamespace(messages=Scripted()))
     summary = await run(authorized, "claude-support@2026-09")
-    assert summary.status in {"complete", "needs_review"}
+    assert summary.status == "needs_review"
     assert summary.scorecard["dimension_pass_rates"]["calibration"] == 1.0
     assert summary.scorecard["dimension_pass_rates"]["factuality"] == 0.0
     assert summary.scorecard["total_cost_usd"] > 0

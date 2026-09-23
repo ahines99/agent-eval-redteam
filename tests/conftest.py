@@ -18,10 +18,11 @@ def anyio_backend() -> str:
 
 
 @pytest.fixture
-def platform() -> EvalPlatform:
+def platform():
     p = EvalPlatform(Repository("sqlite://"))
     bootstrap(p)
-    return p
+    yield p
+    p.repo.close()
 
 
 @pytest.fixture

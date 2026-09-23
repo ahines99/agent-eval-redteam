@@ -24,6 +24,13 @@ def _line(s: RunSummary) -> str:
 
 async def demo(db_url: str) -> int:
     platform = EvalPlatform(Repository(db_url))
+    try:
+        return await _demo(platform)
+    finally:
+        platform.repo.close()
+
+
+async def _demo(platform: EvalPlatform) -> int:
     bootstrap(platform)
     print("Seeded suite support-core@1.0.0 (31 cases, 5 failure plans) and three reference agents.\n")
 
@@ -92,7 +99,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "demo":
         return asyncio.run(demo(args.db))
     if args.cmd == "report":
-        print(EvalPlatform(Repository(args.db)).run_report(args.run_id))
+        repo = Repository(args.db)
+        try:
+            print(EvalPlatform(repo).run_report(args.run_id))
+        finally:
+            repo.close()
         return 0
     from .mcp_server import get_platform, mcp
 

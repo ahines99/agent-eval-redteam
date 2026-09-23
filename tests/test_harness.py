@@ -76,7 +76,7 @@ async def test_bad_credentials_fail_the_run_without_blaming_the_agent(authorized
 
     messages.failures.clear()  # credentials fixed
     resumed = await authorized.resume_run(failed.run_id, actor="alice")
-    assert resumed.status in {"complete", "needs_review"}
+    assert resumed.status == "needs_review"
     assert all(t.agent_error is None for t in authorized.repo.traces_for(failed.run_id))
 
 
@@ -84,7 +84,7 @@ async def test_overloaded_api_is_retried_not_scored(authorized: EvalPlatform):
     messages = _Scripted(_status(anthropic.OverloadedError, 529))
     agent_id = _claude(authorized, messages)
     summary = await run(authorized, agent_id)
-    assert summary.status in {"complete", "needs_review"}
+    assert summary.status == "needs_review"
     retries = [e for e in authorized.audit_trail(summary.run_id) if e["event_type"] == "step_retry"]
     assert len(retries) == 1 and "OverloadedError" in retries[0]["payload"]["error"]
     assert all(t.agent_error is None for t in authorized.repo.traces_for(summary.run_id))

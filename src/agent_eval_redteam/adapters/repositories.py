@@ -212,6 +212,10 @@ class Repository:
         self.engine: Engine = create_engine(url, **kwargs)
         metadata.create_all(self.engine)
 
+    def close(self) -> None:
+        """Release pooled connections (an in-memory SQLite database is discarded)."""
+        self.engine.dispose()
+
     # ------------------------------------------------------------ agents
 
     def insert_agent(self, rec: AgentRecord) -> None:
