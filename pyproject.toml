@@ -1,0 +1,45 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "agent-eval-redteam"
+version = "0.1.0"
+description = "Evaluate and red-team AI agents: tool correctness, permission adherence, prompt-injection resistance, PII leakage, citations, recovery, and release gating over MCP."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+  "mcp[cli]>=2.2,<3",
+  "pydantic>=2.9",
+  "sqlalchemy>=2.0",
+  "opentelemetry-api>=1.27",
+]
+
+[project.optional-dependencies]
+# Live-model adapter. The deterministic reference agents need no network or API key.
+claude = ["anthropic>=1.0,<2"]
+# Point DATABASE_URL at PostgreSQL instead of the default local SQLite file.
+postgres = ["psycopg[binary]>=3.2"]
+dev = ["pytest>=8", "anyio>=4", "ruff>=0.7", "mypy>=1.12"]
+
+[project.scripts]
+agent-eval = "agent_eval_redteam.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/agent_eval_redteam"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+addopts = "-p no:asyncio"
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
