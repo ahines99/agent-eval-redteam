@@ -33,8 +33,9 @@ from ..domain.project_models import (
     Scorecard,
     Trace,
 )
-from ..domain.scoring import score_trace
+from ..domain.scoring import SCORING_VERSION, score_trace
 from ..domain.stats import aggregate, case_outcomes, compare, regression_alerts
+from ..observability import span
 from .base import RunContext, Status, StepResult, TransientError, run_steps
 
 PROJECT_STEPS = [
@@ -93,7 +94,15 @@ async def run_case(adapter: AgentAdapter, agent: AgentRecord, suite: EvalSuite, 
     sandbox = Sandbox.for_case(case, failure=failure, max_tool_calls=budget.max_tool_calls)
     agent_error = None
     try:
-        outcome = await asyncio.wait_for(adapter.run(case.prompt, sandbox, repeat=repeat), timeout=CASE_TIMEOUT_S)
+        with span("agent_case", run_id=run_id, case_id=case.case_id, phase=phase, repeat=repeat,
+                  agent_id=agent.agent_id, model=adapter.model,
+                  injected_tool=failure.tool if failure else None) as case_span:
+            outcome = await asyncio.wait_for(adapter.run(case.prompt, sandbox, repeat=repeat),
+                                             timeout=CASE_TIMEOUT_S)
+            case_span.set_attribute("tool_calls", len(sandbox.calls))
+            case_span.set_attribute("stop_reason", outcome.stop_reason)
+            case_span.set_attribute("input_tokens", outcome.input_tokens)
+            case_span.set_attribute("output_tokens", outcome.output_tokens)
     except Exception as exc:  # noqa: BLE001 - classified below; only genuine agent failures are scored
         kind = adapter.classify_error(exc)
         if kind == "transient":
@@ -246,8 +255,10 @@ async def score_traces(ctx: RunContext, env: EvalEnvironment) -> StepResult:
                               suite_version=suite.version, scorecard=card.model_dump(mode="json"),
                               outcomes=outcomes)
     return StepResult({
+        "scoring_version": SCORING_VERSION,
         "scorecard": card.model_dump(mode="json"),
         "case_outcomes": outcomes,
+        "evidence_read": sorted(evidence_ids.values()),
         "n_findings": len(findings),
         "failures": [{"case_id": s.case_id, "phase": s.phase, "repeat": s.repeat,
                       "dimensions": [d.dimension.value for d in s.failures()]} for s in scores if not s.passed],

@@ -258,16 +258,22 @@ class EvalPlatform:
             raise LookupError(f"step {step!r} has no artifact for run {run_id}")
         return art
 
-    def get_findings(self, run_id: str, severity: str | None = None) -> list[Finding]:
+    def get_findings(self, run_id: str, severity: str | None = None, *, reader: str | None = None) -> list[Finding]:
         self._run(run_id)
-        found = self.repo.findings_for(run_id)
-        return [f for f in found if severity is None or f.severity == severity]
+        found = [f for f in self.repo.findings_for(run_id) if severity is None or f.severity == severity]
+        if reader is not None:
+            self._audit(run_id, "trace-store", "evidence_read", normalize_actor(reader, "reader"),
+                        what="findings", evidence_ids=sorted({e.evidence_id for f in found for e in f.evidence}))
+        return found
 
-    def get_trace(self, trace_id: str) -> dict[str, Any]:
+    def get_trace(self, trace_id: str, *, reader: str | None = None) -> dict[str, Any]:
         found = self.repo.get_trace(trace_id)
         if found is None:
             raise LookupError(f"trace {trace_id} not found")
         trace, stored_hash = found
+        if reader is not None:
+            self._audit(trace.run_id, "trace-store", "evidence_read", normalize_actor(reader, "reader"),
+                        what="trace", evidence_ids=[stable_id("evidence", trace_id)])
         recomputed = canonical_hash(trace.model_dump(mode="json"))
         return {"trace": trace.model_dump(mode="json"), "content_hash": stored_hash,
                 "integrity_ok": recomputed == stored_hash, "evidence_id": stable_id("evidence", trace_id)}

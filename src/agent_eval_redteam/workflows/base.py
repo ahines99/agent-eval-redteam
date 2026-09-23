@@ -13,7 +13,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any, Protocol
 
-from ..domain.models import AuditEvent
+from ..domain.models import SCHEMA_VERSION, AuditEvent
 from ..domain.policies import PolicyViolation
 from ..observability import log, span
 
@@ -91,7 +91,7 @@ async def run_steps(ctx: RunContext, steps: Sequence[Step], store: RunStore, *, 
 
         digest = store.save_artifact(ctx.run_id, step.name, result.artifact)
         ctx.artifacts[step.name] = result.artifact
-        store.audit(_event(ctx, step.name, "step_completed", artifact_hash=digest))
+        store.audit(_event(ctx, step.name, "step_completed", artifact_hash=digest, schema_version=SCHEMA_VERSION))
         if result.pause:
             store.update_run(ctx.run_id, status=Status.NEEDS_REVIEW.value)
             store.audit(_event(ctx, step.name, "paused_for_review"))
