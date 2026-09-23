@@ -9,16 +9,17 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
-from ..adapters.agents import AgentAdapter, AgentOutcome
+from ..adapters.agents import AgentAdapter, AgentOutcome, HarnessError
 from ..adapters.claude_agent import estimate_cost
 from ..adapters.repositories import Repository, canonical_hash, stable_id
-from ..adapters.sandbox import Sandbox
+from ..adapters.sandbox import Sandbox, world_ids
 from ..domain.models import Confidence, EvidenceRef, Finding
 from ..domain.policies import (
     PolicyViolation,
     check_run_allowed,
     check_suite_content,
     evaluate_gate,
+    suite_authorizations,
 )
 from ..domain.project_models import (
     AgentRecord,
@@ -68,9 +69,14 @@ class EvalEnvironment:
         if found is None:
             raise LookupError(f"suite {suite_id}@{version} is not registered")
         suite, stored_hash = found
-        if canonical_hash(suite.model_dump(mode="json")) != stored_hash:
+        if suite.content_hash() != stored_hash:
             raise PolicyViolation(f"suite {suite_id}@{version} content does not match its registered hash")
         return suite
+
+    def authorize(self, agent: AgentRecord, suite: EvalSuite, case_ids: list[str] | None = None) -> None:
+        """Re-check authorization with the current clock right before the agent is called."""
+        check_run_allowed(agent, suite, self.repo.authorizations_for(agent.agent_id), self.clock(),
+                          case_ids=case_ids)
 
 
 # ------------------------------------------------------------------ harness
@@ -88,9 +94,12 @@ async def run_case(adapter: AgentAdapter, agent: AgentRecord, suite: EvalSuite, 
     agent_error = None
     try:
         outcome = await asyncio.wait_for(adapter.run(case.prompt, sandbox, repeat=repeat), timeout=CASE_TIMEOUT_S)
-    except adapter.infrastructure_errors as exc:
-        raise TransientError(f"could not reach agent {agent.agent_id}: {type(exc).__name__}") from exc
-    except Exception as exc:  # noqa: BLE001 - an agent crash is an observation, not a harness failure
+    except Exception as exc:  # noqa: BLE001 - classified below; only genuine agent failures are scored
+        kind = adapter.classify_error(exc)
+        if kind == "transient":
+            raise TransientError(f"could not reach agent {agent.agent_id}: {type(exc).__name__}") from exc
+        if kind == "harness":
+            raise HarnessError(f"harness could not run agent {agent.agent_id}: {type(exc).__name__}: {exc}") from exc
         outcome = AgentOutcome(final_output="", stop_reason="agent_error", model=adapter.model)
         agent_error = f"{type(exc).__name__}: {exc}"
     latency = outcome.latency_ms if outcome.latency_ms is not None else 250 + sum(
@@ -135,7 +144,7 @@ async def register_system(ctx: RunContext, env: EvalEnvironment) -> StepResult:
 
 async def load_eval_suite(ctx: RunContext, env: EvalEnvironment) -> StepResult:
     suite = env.suite(ctx.run["suite_id"], ctx.run["suite_version"])
-    check_suite_content(suite)
+    check_suite_content(suite, reserved_ids=world_ids())
     agent = env.agent(ctx.run["agent_id"])
     auth = check_run_allowed(agent, suite, env.repo.authorizations_for(agent.agent_id), env.clock())
     categories: dict[str, int] = defaultdict(int)
@@ -143,9 +152,9 @@ async def load_eval_suite(ctx: RunContext, env: EvalEnvironment) -> StepResult:
         categories[c.category.value] += 1
     return StepResult({
         "suite_id": suite.suite_id, "version": suite.version,
-        "content_hash": canonical_hash(suite.model_dump(mode="json")),
+        "content_hash": suite.content_hash(),
         "n_cases": len(suite.cases), "repeats": suite.repeats, "categories": dict(sorted(categories.items())),
-        "security_categories": sorted(c.value for c in suite.security_categories),
+        "security_cases": {cid: sorted(needs) for cid, needs in suite_authorizations(suite).items()},
         "authorization_id": auth.authorization_id if auth else None,
         "failure_plans": len(suite.failure_plans),
     })
@@ -154,6 +163,7 @@ async def load_eval_suite(ctx: RunContext, env: EvalEnvironment) -> StepResult:
 async def run_baseline(ctx: RunContext, env: EvalEnvironment) -> StepResult:
     agent = env.agent(ctx.run["agent_id"])
     suite = env.suite(ctx.run["suite_id"], ctx.run["suite_version"])
+    env.authorize(agent, suite)
     adapter = env.adapter_factory(agent)
     jobs, ids = [], []
     for case in suite.cases:
@@ -172,6 +182,7 @@ async def inject_failures(ctx: RunContext, env: EvalEnvironment) -> StepResult:
     if agent.environment is Environment.PRODUCTION or not suite.failure_plans:
         reason = "production agent" if agent.environment is Environment.PRODUCTION else "suite has no failure plans"
         return StepResult({"n_traces": 0, "trace_ids": [], "skipped": reason})
+    env.authorize(agent, suite, [p.case_id for p in suite.failure_plans])
     adapter = env.adapter_factory(agent)
     jobs, ids = [], []
     for plan in suite.failure_plans:
@@ -255,50 +266,73 @@ def release_decision(repo: Repository, run_id: str, gate: dict[str, Any] | None)
     return "approved_with_override" if approval["decision"] == "approve" else "rejected"
 
 
-async def compare_versions(ctx: RunContext, env: EvalEnvironment) -> StepResult:
-    current = env.repo.get_run_metrics(ctx.run_id)
-    assert current is not None
-    baseline_id = ctx.run.get("baseline_run_id")
-    how = "explicit"
-    if baseline_id is None:
-        how = "last accepted run of this agent on this suite"
-        for h in reversed(env.repo.metrics_history(current["agent_name"], current["suite_id"], limit=25)):
-            if h["run_id"] == ctx.run_id:
-                continue
-            gate = env.repo.artifacts(h["run_id"]).get(GATE_STEP)
-            if release_decision(env.repo, h["run_id"], gate["payload"] if gate else None) in {
-                    "eligible", "approved_with_override"}:
-                baseline_id = h["run_id"]
-                break
-    if baseline_id is None:
-        return StepResult({"baseline_run_id": None, "selection": how,
-                           "note": "no accepted baseline run yet; comparison skipped"})
+def _accepted(repo: Repository, run_id: str) -> bool:
+    gate = repo.artifacts(run_id).get(GATE_STEP)
+    return release_decision(repo, run_id, gate["payload"] if gate else None) in {"eligible", "approved_with_override"}
+
+
+def _comparison(env: EvalEnvironment, current: dict[str, Any], baseline_id: str) -> dict[str, Any]:
     base = env.repo.get_run_metrics(baseline_id)
     if base is None:
         raise LookupError(f"baseline run {baseline_id} has no scored metrics")
+    same_suite = (current["suite_id"], current["suite_version"]) == (base["suite_id"], base["suite_version"])
     result = compare(Scorecard.model_validate(current["scorecard"]), current["case_outcomes"],
-                     Scorecard.model_validate(base["scorecard"]), base["case_outcomes"],
-                     same_suite_version=current["suite_version"] == base["suite_version"])
+                     Scorecard.model_validate(base["scorecard"]), base["case_outcomes"], same_suite_version=same_suite)
     base_run = env.repo.get_run(baseline_id) or {}
-    return StepResult({"baseline_run_id": baseline_id, "baseline_agent_id": base_run.get("agent_id"),
-                       "selection": how, **result})
+    return {"baseline_run_id": baseline_id, "baseline_agent_id": base_run.get("agent_id"),
+            "baseline_suite": f"{base['suite_id']}@{base['suite_version']}", **result}
+
+
+async def compare_versions(ctx: RunContext, env: EvalEnvironment) -> StepResult:
+    """Two comparisons, kept apart on purpose.
+
+    gating: against the most recent *accepted* run of the same agent name on the same suite version that was
+    requested before this one. Only this one can put a run into review, and the caller can't choose it.
+    requested: against a caller-chosen baseline_run_id (e.g. another model). Informational only.
+    """
+    current = env.repo.get_run_metrics(ctx.run_id)
+    assert current is not None
+    run = env.repo.get_run(ctx.run_id) or ctx.run
+    candidates = env.repo.metrics_history(current["agent_name"], current["suite_id"], current["suite_version"],
+                                          limit=50, before=run["created_at"])
+    gating_id = next((h["run_id"] for h in reversed(candidates)
+                      if h["run_id"] != ctx.run_id and _accepted(env.repo, h["run_id"])), None)
+    selection = f"last accepted run of {current['agent_name']} on {current['suite_id']}@{current['suite_version']}"
+    artifact: dict[str, Any]
+    if gating_id is None:
+        artifact = {"baseline_run_id": None, "selection": selection,
+                    "note": "no earlier accepted run on this suite version; gating comparison skipped"}
+    else:
+        artifact = {"selection": selection, **_comparison(env, current, gating_id)}
+    requested_id = ctx.run.get("baseline_run_id")
+    artifact["requested"] = _comparison(env, current, requested_id) if requested_id else None
+    return StepResult(artifact)
 
 
 async def gate_release(ctx: RunContext, env: EvalEnvironment) -> StepResult:
     card = Scorecard.model_validate(ctx.artifacts["Score traces"]["scorecard"])
     comparison = ctx.artifacts.get("Compare versions/models")
-    decision = evaluate_gate(card, comparison if comparison and comparison.get("baseline_run_id") else None)
+    gating = comparison if comparison and comparison.get("baseline_run_id") else None
+    prior_blocks = []
+    for other in env.repo.runs_for_agent(ctx.run["agent_id"]):
+        if other["run_id"] == ctx.run_id:
+            continue
+        gate = env.repo.artifacts(other["run_id"]).get(GATE_STEP)
+        if gate and gate["payload"]["decision"]["outcome"] == GateOutcome.BLOCK:
+            prior_blocks.append(other["run_id"])
+    decision = evaluate_gate(card, gating, prior_blocks)
     return StepResult({"decision": decision.model_dump(mode="json")}, pause=decision.outcome is GateOutcome.REVIEW)
 
 
 async def monitor_regressions(ctx: RunContext, env: EvalEnvironment) -> StepResult:
+    """Trend of this agent name on this exact suite version (case sets differ across versions)."""
     current = env.repo.get_run_metrics(ctx.run_id)
     assert current is not None
-    history = env.repo.metrics_history(current["agent_name"], current["suite_id"])
+    history = env.repo.metrics_history(current["agent_name"], current["suite_id"], current["suite_version"])
     series = [{"run_id": h["run_id"], "agent_id": h["agent_id"], "pass_rate": h["pass_rate"],
                "failing_cases": h["scorecard"]["failing_cases"]} for h in history]
-    return StepResult({"window": len(series), "history": [{k: v for k, v in s.items() if k != "failing_cases"}
-                                                          for s in series],
+    return StepResult({"suite_version": current["suite_version"], "window": len(series),
+                       "history": [{k: v for k, v in s.items() if k != "failing_cases"} for s in series],
                        "alerts": regression_alerts(series)})
 
 

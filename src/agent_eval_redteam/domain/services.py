@@ -15,7 +15,7 @@ from pydantic import BaseModel
 
 from ..adapters.agents import AgentAdapter, build_adapter
 from ..adapters.repositories import Repository, canonical_hash, stable_id
-from ..adapters.sandbox import Sandbox
+from ..adapters.sandbox import Sandbox, world_ids
 from ..workflows.base import Status
 from ..workflows.primary import (
     GATE_STEP,
@@ -25,15 +25,17 @@ from ..workflows.primary import (
     run_case,
     run_primary,
 )
-from .models import AuditEvent, Finding
+from .models import SCHEMA_VERSION, AuditEvent, Finding
 from .policies import (
     MAX_AUTHORIZATION_HOURS,
+    MAX_IDEMPOTENCY_KEY,
     Authorization,
     PolicyViolation,
     check_failure_injection,
     check_gate_decision,
     check_run_allowed,
     check_suite_content,
+    normalize_actor,
 )
 from .project_models import (
     SECURITY_CATEGORIES,
@@ -69,7 +71,9 @@ class RunSummary(BaseModel):
     gate: GateDecision | None
     release_decision: str
     comparison: dict[str, Any] | None
+    requested_comparison: dict[str, Any] | None
     regression_alerts: list[str]
+    schema_version: str = SCHEMA_VERSION
 
 
 class EvalPlatform:
@@ -85,6 +89,7 @@ class EvalPlatform:
     # ------------------------------------------------------------ registry
 
     def register_agent(self, spec: AgentSpec) -> AgentRecord:
+        spec = spec.model_copy(update={"owner": normalize_actor(spec.owner, "owner")})
         if spec.adapter.value == "scripted":
             build_adapter(AgentRecord(**spec.model_dump(), agent_id="probe", config_hash="",
                                       registered_at=self.env.clock()))  # validates flaws/presets early
@@ -109,8 +114,9 @@ class EvalPlatform:
         return self.repo.list_agents()
 
     def register_suite(self, suite: EvalSuite, registered_by: str) -> dict[str, Any]:
-        check_suite_content(suite)
-        digest = canonical_hash(suite.model_dump(mode="json"))
+        registered_by = normalize_actor(registered_by, "registered_by")
+        check_suite_content(suite, reserved_ids=world_ids())
+        digest = suite.content_hash()
         existing = self.repo.get_suite(suite.suite_id, suite.version)
         if existing:
             if existing[1] != digest:
@@ -127,6 +133,7 @@ class EvalPlatform:
 
     def authorize_security_testing(self, *, agent_id: str, approved_by: str, categories: list[str], reason: str,
                                    expires_in_hours: int = 24) -> Authorization:
+        approved_by = normalize_actor(approved_by, "approved_by")
         agent = self.env.agent(agent_id)
         unknown = set(categories) - {c.value for c in SECURITY_CATEGORIES}
         if unknown:
@@ -150,6 +157,9 @@ class EvalPlatform:
 
     async def start_run(self, *, agent_id: str, suite_id: str, suite_version: str, requested_by: str,
                         idempotency_key: str | None = None, baseline_run_id: str | None = None) -> RunSummary:
+        requested_by = normalize_actor(requested_by, "requested_by")
+        if idempotency_key is not None and not 1 <= len(idempotency_key) <= MAX_IDEMPOTENCY_KEY:
+            raise PolicyViolation(f"idempotency_key must be 1-{MAX_IDEMPOTENCY_KEY} characters")
         if idempotency_key:
             prior = self.repo.run_by_idempotency_key(idempotency_key)
             if prior:
@@ -163,6 +173,8 @@ class EvalPlatform:
         self.env.suite(suite_id, suite_version)
         if baseline_run_id and self.repo.get_run(baseline_run_id) is None:
             raise LookupError(f"baseline run {baseline_run_id} not found")
+        if baseline_run_id and self.repo.get_run_metrics(baseline_run_id) is None:
+            raise PolicyViolation(f"baseline run {baseline_run_id} has not been scored yet; pick a scored run")
         check_run_allowed(self.env.agent(agent_id), self.env.suite(suite_id, suite_version),
                           self.repo.authorizations_for(agent_id), self.env.clock())
 
@@ -179,16 +191,19 @@ class EvalPlatform:
         return self.get_run(run_id)
 
     async def resume_run(self, run_id: str, *, actor: str, overrides: dict[str, Any] | None = None) -> RunSummary:
+        actor = normalize_actor(actor)
         run = self._run(run_id)
         if run["status"] == Status.COMPLETE:
             return self.get_run(run_id)
         if run["status"] == Status.NEEDS_REVIEW and self.repo.get_approval(run_id, GATE_STEP) is None:
-            raise PolicyViolation("run is waiting at the release gate; record a decision with decide_gate first")
+            raise PolicyViolation("run is waiting at the release gate; record a decision with "
+                                  "decide_release_gate first")
         self._audit(run_id, "workflow", "run_resumed", actor, from_status=run["status"])
         await run_primary(run_id, self.env, actor=actor, overrides=overrides)
         return self.get_run(run_id)
 
     async def decide_gate(self, *, run_id: str, approver: str, decision: str, reason: str) -> RunSummary:
+        approver = normalize_actor(approver, "approver")
         run = self._run(run_id)
         gate = self._gate(run_id)
         if gate is None:
@@ -231,7 +246,8 @@ class EvalPlatform:
             scorecard=score["scorecard"] if score else None,
             gate=GateDecision.model_validate(gate["decision"]) if gate else None,
             release_decision=release_decision(self.repo, run_id, gate),
-            comparison=comparison,
+            comparison={k: v for k, v in comparison.items() if k != "requested"} if comparison else None,
+            requested_comparison=comparison.get("requested") if comparison else None,
             regression_alerts=monitor["alerts"] if monitor else [],
         )
 
@@ -260,28 +276,41 @@ class EvalPlatform:
         self._run(run_id)
         return self.repo.audit_trail(run_id)
 
-    def regression_report(self, agent_name: str, suite_id: str) -> dict[str, Any]:
-        history = self.repo.metrics_history(agent_name, suite_id)
-        series = [{"run_id": h["run_id"], "agent_id": h["agent_id"], "suite_version": h["suite_version"],
-                   "pass_rate": h["pass_rate"], "failing_cases": h["scorecard"]["failing_cases"],
-                   "created_at": h["created_at"].isoformat() if h["created_at"] else None} for h in history]
-        return {"agent_name": agent_name, "suite_id": suite_id, "runs": series,
-                "alerts": regression_alerts(series)}
+    def regression_report(self, agent_name: str, suite_id: str, suite_version: str | None = None) -> dict[str, Any]:
+        """History per suite version (pass rates on different case sets aren't comparable)."""
+        history = self.repo.metrics_history(agent_name, suite_id, suite_version, limit=50)
+        by_version: dict[str, list[dict[str, Any]]] = {}
+        for h in history:
+            by_version.setdefault(h["suite_version"], []).append({
+                "run_id": h["run_id"], "agent_id": h["agent_id"], "suite_version": h["suite_version"],
+                "pass_rate": h["pass_rate"], "failing_cases": h["scorecard"]["failing_cases"],
+                "created_at": h["run_created_at"].isoformat()})
+        runs = [r for rows in by_version.values() for r in rows]
+        alerts = [f"{version}: {a}" for version, rows in sorted(by_version.items()) for a in regression_alerts(rows)]
+        return {"agent_name": agent_name, "suite_id": suite_id, "suite_version": suite_version, "runs": runs,
+                "alerts": alerts}
 
     # ------------------------------------------------------------ ad-hoc failure injection
 
     async def inject_failure(self, *, run_id: str, case_id: str, tool: str, failure_type: str, requested_by: str,
                              destructive: bool = False) -> CaseScore:
+        requested_by = normalize_actor(requested_by, "requested_by")
         run = self._run(run_id)
         agent = self.env.agent(run["agent_id"])
         check_failure_injection(agent, destructive=destructive)
         if "Run baseline" not in self.repo.artifacts(run_id):
             raise PolicyViolation("run a baseline before injecting ad-hoc failures")
         suite = self.env.suite(run["suite_id"], run["suite_version"])
-        case = suite.case(case_id)
+        try:
+            case = suite.case(case_id)
+        except KeyError:
+            raise LookupError(f"case {case_id!r} is not in {suite.suite_id}@{suite.version}") from None
         plan = FailurePlan(case_id=case_id, tool=tool, failure_type=FailureType(failure_type))
+        self.env.authorize(agent, suite, [case_id])  # same authorization rules as a full run, checked now
         adapter: AgentAdapter = self.env.adapter_factory(agent)
         trace = await run_case(adapter, agent, suite, case, run_id=run_id, phase="adhoc", repeat=0, failure=plan)
+        # Every ad-hoc probe is its own piece of evidence, even when repeated with identical parameters.
+        trace = trace.model_copy(update={"trace_id": str(uuid.uuid4())})
         self.repo.save_trace(trace)
         self._audit(run_id, "failure-injector", "failure_injected", requested_by, case_id=case_id, tool=tool,
                     failure_type=failure_type, trace_id=trace.trace_id)
@@ -309,10 +338,14 @@ class EvalPlatform:
         if s.gate:
             lines += ["", f"## Gate: {s.gate.outcome.value} ({s.gate.policy_version})"]
             lines += [f"- {r}" for r in s.gate.reasons]
-        if s.comparison and s.comparison.get("baseline_run_id"):
-            cmp_ = s.comparison
-            lines += ["", f"## Comparison vs {cmp_['baseline_run_id']} ({cmp_.get('baseline_agent_id')})",
-                      f"- Pass-rate delta: {cmp_['pass_rate_delta']:+.2f} (significant: {cmp_['significant']})",
+        for title, cmp_ in (("Gating comparison", s.comparison), ("Requested comparison (informational)",
+                                                                   s.requested_comparison)):
+            if not cmp_ or not cmp_.get("baseline_run_id"):
+                continue
+            lines += ["", f"## {title} vs {cmp_['baseline_run_id']} ({cmp_.get('baseline_agent_id')}, "
+                      f"{cmp_.get('baseline_suite')})",
+                      f"- Comparable: {cmp_['comparable']}; pass-rate delta: {cmp_['pass_rate_delta']:+.2f} "
+                      f"(significant: {cmp_['significant']})",
                       f"- Regressions: {cmp_['regressions'] or 'none'}", f"- Fixes: {cmp_['fixes'] or 'none'}"]
         if s.regression_alerts:
             lines += ["", "## Regression alerts"] + [f"- {a}" for a in s.regression_alerts]

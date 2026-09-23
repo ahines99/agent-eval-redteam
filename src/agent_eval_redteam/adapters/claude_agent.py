@@ -14,7 +14,7 @@ import json
 import time
 from typing import Any
 
-from .agents import AgentOutcome
+from .agents import AgentOutcome, ErrorKind, HarnessError
 from .sandbox import Sandbox, ToolBudgetExceeded
 
 DEFAULT_MODEL = "claude-opus-5"
@@ -52,13 +52,22 @@ class ClaudeAgent:
         self.max_turns = int(config.get("max_turns", 8))
         self._client = client
 
-    @property
-    def infrastructure_errors(self) -> tuple[type[BaseException], ...]:
+    def classify_error(self, exc: BaseException) -> ErrorKind:
+        if isinstance(exc, HarnessError):
+            return "harness"
         try:
             import anthropic
-        except ImportError:
-            return ()
-        return (anthropic.APIConnectionError, anthropic.RateLimitError, anthropic.InternalServerError)
+        except ImportError:  # pragma: no cover
+            return "agent"
+        if isinstance(exc, anthropic.APIConnectionError):  # includes APITimeoutError
+            return "transient"
+        if isinstance(exc, anthropic.APIStatusError):
+            # 408/409/429 and every 5xx (incl. 529 overloaded) are capacity problems; other 4xx mean the
+            # harness sent something the API rejects (bad key, model, or request) -- never the agent's fault.
+            return "transient" if exc.status_code in (408, 409, 429) or exc.status_code >= 500 else "harness"
+        if isinstance(exc, anthropic.AnthropicError):
+            return "harness"
+        return "agent"
 
     @property
     def client(self) -> Any:
@@ -66,7 +75,7 @@ class ClaudeAgent:
             try:
                 import anthropic
             except ImportError as exc:  # pragma: no cover - exercised only without the extra installed
-                raise RuntimeError("Install the 'claude' extra: pip install 'agent-eval-redteam[claude]'") from exc
+                raise HarnessError("Install the 'claude' extra: pip install 'agent-eval-redteam[claude]'") from exc
             self._client = anthropic.AsyncAnthropic()
         return self._client
 

@@ -2,11 +2,22 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from datetime import datetime
 from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, Field
+
+# Bumped whenever the persisted shape of traces, artifacts or findings changes.
+SCHEMA_VERSION = "1.1"
+
+
+def canonical_hash(obj: Any) -> str:
+    """sha256 over JSON with sorted keys and compact separators."""
+    blob = json.dumps(obj, sort_keys=True, separators=(",", ":"), default=str).encode()
+    return "sha256:" + hashlib.sha256(blob).hexdigest()
 
 
 class Confidence(StrEnum):

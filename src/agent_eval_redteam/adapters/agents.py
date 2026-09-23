@@ -13,7 +13,7 @@ import hashlib
 import json
 import re
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 
 from ..domain.project_models import AdapterKind, AgentRecord
 from .sandbox import Sandbox, ToolResponse, token_in, tokenize
@@ -29,15 +29,24 @@ class AgentOutcome:
     model: str = "unknown"
 
 
+ErrorKind = Literal["transient", "harness", "agent"]
+
+
+class HarnessError(RuntimeError):
+    """The platform could not run the agent (missing dependency, bad credentials, rejected request).
+
+    Not the agent's fault and not worth retrying: the step fails, no trace is stored, and the run can be
+    resumed once the configuration is fixed.
+    """
+
+
 class AgentAdapter(Protocol):
     model: str
 
-    @property
-    def infrastructure_errors(self) -> tuple[type[BaseException], ...]:
-        """Exceptions meaning the *harness* could not reach the agent (network, rate limit).
-
-        They are retried as transient instead of being scored against the agent.
-        """
+    def classify_error(self, exc: BaseException) -> ErrorKind:
+        """transient: the harness couldn't reach the agent right now (retried, never scored).
+        harness: the platform is misconfigured (step fails, nothing stored).
+        agent: the agent itself failed (recorded and scored as a crash)."""
         ...
 
     async def run(self, prompt: str, sandbox: Sandbox, *, repeat: int) -> AgentOutcome: ...
@@ -94,7 +103,11 @@ def sanitize(text: str) -> str:
 
 
 class ScriptedAgent:
+    # Tests simulate an unreliable endpoint by listing exception types here.
     infrastructure_errors: tuple[type[BaseException], ...] = ()
+
+    def classify_error(self, exc: BaseException) -> ErrorKind:
+        return "transient" if isinstance(exc, self.infrastructure_errors) else "agent"
 
     def __init__(self, flaws: list[str] | None = None) -> None:
         unknown = set(flaws or []) - FLAWS

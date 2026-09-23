@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
@@ -32,7 +30,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.pool import StaticPool
 
-from ..domain.models import AuditEvent, Confidence, EvidenceRef, Finding
+from ..domain.models import AuditEvent, Confidence, EvidenceRef, Finding, canonical_hash
 from ..domain.policies import Authorization
 from ..domain.project_models import AgentRecord, EvalSuite, Trace
 
@@ -41,11 +39,6 @@ NAMESPACE = uuid.UUID("7f1d2c3e-4b5a-4c6d-9e8f-0a1b2c3d4e5f")
 
 def now() -> datetime:
     return datetime.now(UTC)
-
-
-def canonical_hash(obj: Any) -> str:
-    blob = json.dumps(obj, sort_keys=True, separators=(",", ":"), default=str).encode()
-    return "sha256:" + hashlib.sha256(blob).hexdigest()
 
 
 def stable_id(*parts: str) -> str:
@@ -241,7 +234,8 @@ class Repository:
         with self.engine.begin() as c:
             c.execute(insert(eval_suites).values(
                 suite_id=suite.suite_id, version=suite.version, content_hash=content_hash,
-                definition=suite.model_dump(mode="json"), registered_by=registered_by, created_at=now()))
+                definition=suite.model_dump(mode="json", exclude_defaults=True), registered_by=registered_by,
+                created_at=now()))
 
     def get_suite(self, suite_id: str, version: str) -> tuple[EvalSuite, str] | None:
         with self.engine.connect() as c:
@@ -294,7 +288,9 @@ class Repository:
     def get_run(self, run_id: str) -> dict[str, Any] | None:
         with self.engine.connect() as c:
             row = c.execute(select(workflow_runs).where(workflow_runs.c.run_id == run_id)).mappings().first()
-        return dict(row) if row else None
+        if row is None:
+            return None
+        return {**row, "created_at": _aware(row["created_at"]), "updated_at": _aware(row["updated_at"])}
 
     def update_run(self, run_id: str, **values: Any) -> None:
         with self.engine.begin() as c:
@@ -424,16 +420,31 @@ class Repository:
                                                  suite_version=suite_version, pass_rate=scorecard["pass_rate"],
                                                  scorecard=scorecard, case_outcomes=outcomes, created_at=now()))
 
-    def metrics_history(self, agent_name: str, suite_id: str, limit: int = 10) -> list[dict[str, Any]]:
-        """Most recent scored runs for an agent name + suite, oldest first, excluding FAILED runs."""
+    def metrics_history(self, agent_name: str, suite_id: str, suite_version: str | None = None, *,
+                        limit: int = 10, before: datetime | None = None) -> list[dict[str, Any]]:
+        """Most recent scored runs for an agent name + suite (+ version), oldest first, excluding FAILED runs.
+
+        Ordered by when the *run* was requested, so a baseline can only ever be a run that started earlier.
+        """
+        query = (select(run_metrics, workflow_runs.c.status, workflow_runs.c.agent_id,
+                        workflow_runs.c.created_at.label("run_created_at"))
+                 .join(workflow_runs, workflow_runs.c.run_id == run_metrics.c.run_id)
+                 .where(run_metrics.c.agent_name == agent_name, run_metrics.c.suite_id == suite_id,
+                        workflow_runs.c.status != "failed"))
+        if suite_version is not None:
+            query = query.where(run_metrics.c.suite_version == suite_version)
+        if before is not None:
+            query = query.where(workflow_runs.c.created_at < before)
         with self.engine.connect() as c:
-            rows = c.execute(
-                select(run_metrics, workflow_runs.c.status, workflow_runs.c.agent_id)
-                .join(workflow_runs, workflow_runs.c.run_id == run_metrics.c.run_id)
-                .where(run_metrics.c.agent_name == agent_name, run_metrics.c.suite_id == suite_id,
-                       workflow_runs.c.status != "failed")
-                .order_by(run_metrics.c.created_at.desc()).limit(limit)).mappings().all()
-        return [dict(r) for r in reversed(rows)]
+            rows = c.execute(query.order_by(workflow_runs.c.created_at.desc()).limit(limit)).mappings().all()
+        return [{**r, "created_at": _aware(r["created_at"]), "run_created_at": _aware(r["run_created_at"])}
+                for r in reversed(rows)]
+
+    def runs_for_agent(self, agent_id: str) -> list[dict[str, Any]]:
+        with self.engine.connect() as c:
+            rows = c.execute(select(workflow_runs).where(workflow_runs.c.agent_id == agent_id)
+                             .order_by(workflow_runs.c.created_at)).mappings().all()
+        return [{**r, "created_at": _aware(r["created_at"])} for r in rows]
 
     def get_run_metrics(self, run_id: str) -> dict[str, Any] | None:
         with self.engine.connect() as c:

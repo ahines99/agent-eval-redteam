@@ -116,6 +116,7 @@ class TraceRecord(BaseModel):
 class RegressionReport(BaseModel):
     agent_name: str
     suite_id: str
+    suite_version: str | None
     runs: list[dict[str, Any]]
     alerts: list[str]
 
@@ -257,9 +258,12 @@ async def decide_release_gate(run_id: str, approver: str, decision: Literal["app
 
 
 @mcp.tool(annotations=READ_ONLY)
-def get_regression_report(agent_name: str, suite_id: str) -> RegressionReport:
-    """Pass-rate history and regression alerts for all versions of an agent on a suite."""
-    return RegressionReport(**get_platform().regression_report(agent_name, suite_id))
+def get_regression_report(agent_name: str, suite_id: str, suite_version: str | None = None) -> RegressionReport:
+    """Pass-rate history and regression alerts for all versions of an agent on a suite.
+
+    Alerts are computed per suite version, since pass rates on different case sets aren't comparable.
+    """
+    return RegressionReport(**get_platform().regression_report(agent_name, suite_id, suite_version))
 
 
 # ---------------------------------------------------------------- resources

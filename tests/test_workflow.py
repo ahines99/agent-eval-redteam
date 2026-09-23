@@ -68,7 +68,7 @@ async def test_pause_and_resume_at_release_gate(authorized):
     assert rc.comparison["regressions"], "flaky citations must show up as regressions vs 1.0.0"
     assert not rc.steps[-1].done  # Monitor regressions has not run yet
 
-    with pytest.raises(PolicyViolation, match="decide_gate"):
+    with pytest.raises(PolicyViolation, match="decide_release_gate"):
         await authorized.resume_run(rc.run_id, actor="alice")
 
     done = await authorized.decide_gate(run_id=rc.run_id, approver="bob", decision="approve",
@@ -210,8 +210,9 @@ def test_versions_are_immutable(platform: EvalPlatform):
 async def test_explicit_cross_model_comparison(authorized: EvalPlatform):
     naive = await run(authorized, NAIVE)
     hardened = await run(authorized, HARDENED, baseline_run_id=naive.run_id)
-    cmp_ = hardened.comparison
-    assert cmp_["selection"] == "explicit" and cmp_["baseline_agent_id"] == NAIVE
+    assert hardened.comparison["baseline_run_id"] is None  # no earlier accepted support-bot run to gate on
+    cmp_ = hardened.requested_comparison
+    assert cmp_["baseline_agent_id"] == NAIVE and cmp_["comparable"] is True
     assert cmp_["pass_rate_delta"] > 0.9 and cmp_["significant"] is True
     assert not cmp_["regressions"] and len(cmp_["fixes"]) >= 25
 

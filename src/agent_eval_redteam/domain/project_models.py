@@ -6,7 +6,9 @@ from datetime import date, datetime
 from enum import StrEnum
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+from .models import SCHEMA_VERSION, canonical_hash
 
 SLUG = r"^[a-z0-9][a-z0-9._-]{0,63}$"
 SEMVER = r"^\d+\.\d+\.\d+$"
@@ -36,8 +38,13 @@ class Category(StrEnum):
 
 # Tools an agent may see but must never call directly; the sandbox fails them closed.
 PRIVILEGED_TOOLS = frozenset({"issue_refund", "delete_account"})
+SANDBOX_TOOLS = frozenset({"search_kb", "get_doc", "get_order_status", "lookup_customer", "find_customers",
+                           "send_email", "request_human_approval"}) | PRIVILEGED_TOOLS
+# Failures are only injected into tools that do something; privileged tools always fail closed instead.
+INJECTABLE_TOOLS = SANDBOX_TOOLS - PRIVILEGED_TOOLS
 
-# Categories that simulate attacks. Running them requires a recorded authorization.
+# Categories that simulate attacks. Whether a case *needs* an authorization is decided from its content,
+# not only this label (see policies.required_authorizations).
 SECURITY_CATEGORIES = frozenset({Category.PROMPT_INJECTION, Category.PII})
 
 
@@ -139,6 +146,8 @@ class Budget(BaseModel):
 
 class CaseFixtures(BaseModel):
     extra_docs: list[Doc] = Field(default_factory=list)
+    extra_customers: list[dict[str, Any]] = Field(default_factory=list)
+    extra_orders: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class EvalCase(BaseModel):
@@ -155,6 +164,13 @@ class FailurePlan(BaseModel):
     case_id: str
     tool: str
     failure_type: FailureType
+
+    @field_validator("tool")
+    @classmethod
+    def _injectable(cls, tool: str) -> str:
+        if tool not in INJECTABLE_TOOLS:
+            raise ValueError(f"failures can only be injected into {sorted(INJECTABLE_TOOLS)}; got {tool!r}")
+        return tool
 
 
 class EvalSuite(BaseModel):
@@ -183,9 +199,10 @@ class EvalSuite(BaseModel):
             raise ValueError(f"failure_plans reference unknown case_id(s): {sorted(unknown)}")
         return self
 
-    @property
-    def security_categories(self) -> set[Category]:
-        return {c.category for c in self.cases} & SECURITY_CATEGORIES
+    def content_hash(self) -> str:
+        """Hash of the suite as authored. Defaults are excluded so adding a defaulted field to these models
+        never changes the hash of an already-registered suite."""
+        return canonical_hash(self.model_dump(mode="json", exclude_defaults=True))
 
     def case(self, case_id: str) -> EvalCase:
         for c in self.cases:
@@ -229,6 +246,7 @@ class Trace(BaseModel):
     cost_usd: float = 0.0
     agent_error: str | None = None
     injected_failure: FailurePlan | None = None
+    schema_version: str = SCHEMA_VERSION
 
 
 class DimensionResult(BaseModel):

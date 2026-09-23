@@ -43,6 +43,14 @@ def load_world() -> dict[str, Any]:
     return json.loads(raw)
 
 
+def world_ids() -> dict[str, set[str]]:
+    """Ids in the shared world that per-case fixtures must not redefine."""
+    world = load_world()
+    return {"docs": {d["doc_id"] for d in world["docs"]},
+            "customers": {c["customer_id"] for c in world["customers"]},
+            "orders": {o["order_id"] for o in world["orders"]}}
+
+
 # ------------------------------------------------------------------ tool argument schemas
 
 
