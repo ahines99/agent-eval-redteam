@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "verified_at": "2026-09-27T23:12:32.724825+00:00",
+  "synthetic_only": true,
+  "python": "3.14.5",
+  "client_platform": "Windows-11-10.0.26200-SP0",
+  "docker_context": "WSL Ubuntu-22.04",
+  "caddy_release": "caddy:2.11.4-alpine",
+  "caddy_image_digest": "sha256:6aeddd44c3078b0f9a35206472a11420648a79c184603ef95957d0a20044cb2b",
+  "caddy_image_id": "sha256:6aeddd44c3078b0f9a35206472a11420648a79c184603ef95957d0a20044cb2b",
+  "application_image": "agent-eval-portfolio",
+  "application_image_id": "sha256:35f9e606ec45c7e19d8bebb76a485fec6136cd1716ce212a22d2f7ddfa526c07",
+  "caddy_configuration": "{\n    admin off\n    auto_https disable_redirects\n    skip_install_trust\n}\nhttps://localhost:443 {\n    tls internal\n    reverse_proxy backend:8000\n}\n",
+  "tls": {
+    "version": "TLSv1.3",
+    "cipher": "TLS_AES_128_GCM_SHA256",
+    "leaf_sha256": "a58794b455d0f4a21b9c82dc66ae3388aabb2a47ebf124550e6efffb9dd4b6d1",
+    "subject_alt_names": [
+      [
+        "DNS",
+        "localhost"
+      ]
+    ],
+    "issuer": [
+      [
+        [
+          "commonName",
+          "Caddy Local Authority - ECC Intermediate"
+        ]
+      ]
+    ],
+    "explicit_local_ca_trust": true,
+    "certificate_verification_required": true,
+    "untrusted_ca_refused": true,
+    "wrong_hostname_refused": true,
+    "root_certificate_sha256": "e4272c855222c141ca003f2d5734935003a02a005a31e0373540f2ca3fecb78f"
+  },
+  "network": {
+    "proxy_host_binding": "127.0.0.1",
+    "private_internal_network": true,
+    "backend_host_ports": [],
+    "backend_non_root": true,
+    "auth_mount_readonly": true
+  },
+  "mcp": {
+    "missing_token_status": 401,
+    "invalid_token_status": 401,
+    "authenticated_health": "ok",
+    "actor_spoof_overridden": true,
+    "cross_tenant_agent_hidden": true,
+    "read_scope_mutation_refused": true
+  },
+  "raw_tokens_or_private_keys_saved": false,
+  "limitations": [
+    "Private loopback deployment only; no public hostname or remote service claimed",
+    "Ephemeral local CA explicitly trusted by the test client, not installed system-wide",
+    "Single backend process and local synthetic tenant databases; no HA or scale claim"
+  ],
+  "sources": [
+    "https://github.com/caddyserver/caddy/releases/tag/v2.11.4",
+    "https://hub.docker.com/_/caddy",
+    "https://caddyserver.com/docs/automatic-https",
+    "https://caddyserver.com/docs/caddyfile/directives/reverse_proxy"
+  ]
+}

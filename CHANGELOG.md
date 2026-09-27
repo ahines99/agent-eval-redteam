@@ -35,12 +35,18 @@ package, tag or successful external deployment; see release artifacts and valida
   tests and CI definitions require actual execution evidence before claiming validation.
 - Added opt-in filtered OpenTelemetry export, an actual terminal capture, and reviewer
   onboarding/case-study/maintenance documentation.
+- Published a static browser walkthrough, scorer challenge characterization, operational
+  and official Collector evidence, and the first budgeted live Sonnet 5 result.
+- Added cross-platform corpus fingerprinting and reliable owned-process cleanup in the
+  Windows operations verifier.
+- Verified private HTTPS through Caddy with explicit CA trust and a private Docker backend;
+  included the deployment check and PostgreSQL test artifacts in CI.
 
 ### Limits retained
 
 - No claim of exactly-once external API billing, general semantic scoring, independently
   human-validated detection accuracy or a production traffic benchmark.
-- Live-model results and operational shared deployment require their own verification.
+- Live-model and private deployment results are bounded by their documented verification scope.
 - Hash signing/external anchoring remains deferred; database administrators remain trusted.
 
 ## 0.1.0 implementation baseline
@@ -51,6 +57,3 @@ package, tag or successful external deployment; see release artifacts and valida
   skills and offline demonstration paths.
 - Earlier audit notes and planning skeletons remain preserved as historical context in
   [IMPLEMENTATION_HANDOFF.md](IMPLEMENTATION_HANDOFF.md).
-
-- Published a static browser walkthrough, scorer challenge characterization, operational and official Collector evidence, and the first budgeted live Sonnet 5 result.
-- Added cross-platform corpus fingerprinting and reliable owned-process cleanup in the Windows operations verifier.

@@ -72,6 +72,11 @@ jobs:
       - run: python -m pip install uv==0.12.18
       - run: uv sync --frozen --all-extras
       - run: uv run --frozen pytest tests/test_delivery.py tests/test_postgres_contracts.py -m postgres -v --junitxml=data/verification/postgres.xml
+      - uses: actions/upload-artifact@v7.0.1
+        if: always()
+        with:
+          name: postgres-verification
+          path: data/verification/postgres.xml
 
   container:
     runs-on: ubuntu-latest
@@ -88,6 +93,7 @@ jobs:
       - run: docker compose build
       - run: docker compose run --rm --entrypoint alembic eval upgrade head
       - run: uv run --frozen python scripts/mcp_walkthrough.py --container --output-dir data/verification/compose
+      - run: uv run --frozen python scripts/verify_tls_proxy.py --image agent-eval-ci --output data/verification/compose/tls-proxy.json
       - uses: actions/upload-artifact@v7.0.1
         if: always()
         with:

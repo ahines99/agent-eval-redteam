@@ -21,6 +21,9 @@ The public website is a static demonstration; it does not accept credentials or 
 - Local authenticated HTTP verifies credential rotation, tenant separation, scope checks,
   16 admitted requests plus overflow refusal, capacity recovery, stopped-service SQLite
   backup and report-equivalent restoration. [Evidence](evidence/operations.json).
+- Private Docker HTTPS verifies TLS 1.3 with explicit local CA trust, certificate rejection,
+  bearer authentication, actor identity, tenant isolation and scope enforcement. The backend
+  has no published ports. [Deployment check](tls-proxy.md) and [evidence](evidence/tls-proxy.json).
 - Real SDK OTLP HTTP delivery to a local receiver and the official OpenTelemetry Collector
   0.161.0 verifies hierarchy, filtered fields, exit flushing and collector shutdown.
   [Collector evidence](evidence/collector.json).
@@ -43,11 +46,11 @@ The public website is a static demonstration; it does not accept credentials or 
 | F08 durable evidence | `docs/evidence/`, CI test/artifact uploads, `scripts/release_evidence.py` |
 | F09 claim accuracy | Current docs distinguish implemented, locally verified and externally executed capabilities |
 | F10 maintenance surface | Changelog, contribution guide, metadata and enabled GitHub private vulnerability reporting |
-| F11 compatibility | Linux/Windows local evidence; remote Linux 3.12/3.13/3.14 passed; Windows 3.12 tracked in the current CI run |
+| F11 compatibility | Remote Linux 3.12/3.13/3.14 and Windows 3.12 passed: 281 tests passed and eight PostgreSQL tests skipped per matrix job; all eight passed in the separate PostgreSQL job |
 | F12 scorer characterization | 33 traces / 35 proposed labels; nine disagreements retained; **independent human review pending** |
 | F13 PostgreSQL concurrency | Eight actual PostgreSQL tests passed; contracts cover separate connections and competing actors |
 | F14 live model validation | Real Sonnet 5 run complete: 21 requests, $0.10417 estimated token cost, 1/10 pass, review gate; preserved first result |
-| F15 shared operations | Local HTTP operations verified; no publicly hosted evaluation service or TLS deployment claimed |
+| F15 shared operations | Local HTTP operations and private Docker HTTPS deployment verified; no publicly hosted evaluation service claimed |
 | F16 telemetry | Real official Collector transport verified; no external trace storage/UI claim |
 
 ## Remaining external input
@@ -68,8 +71,11 @@ or generalized model-safety result is asserted. Those remain outside this synthe
 
 Use the commands in [CONTRIBUTING](../CONTRIBUTING.md), [deployment](deployment.md),
 [operations verification](operations-verification.md) and [observability](observability.md).
+The [private HTTPS check](tls-proxy.md) also runs in the container CI job.
 The release evidence manifest binds package hashes and test reports to a source commit;
 GitHub Actions independently records the exact revision for each run.
+The [six-job compatibility run](https://github.com/ahines99/agent-eval-redteam/actions/runs/36357603138)
+passed on commit `08f99cc`; the release evidence includes the later tagged revision's own CI record.
 
 The first remote matrix exposed a corpus fingerprint difference caused solely by CRLF/LF checkouts. The fingerprint now normalizes line endings; labels and all nine disagreements are unchanged. A regression test covers both checkout forms.
 

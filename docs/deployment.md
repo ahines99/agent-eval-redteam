@@ -143,6 +143,10 @@ uses stderr so it does not corrupt MCP stdio protocol messages.
 
 ## Release evidence
 
+The [private HTTPS deployment check](tls-proxy.md) runs the application behind Caddy with
+explicit CA trust, authentication and tenant isolation checks. It publishes only a loopback
+proxy port and leaves the backend on a private Docker network.
+
 Keep the commit id, dependency lock, test/coverage output, migration version and demo
 report together for each release. Passing scripted controls validates the harness's known
 cases; it does not establish live-model quality or production traffic coverage.
