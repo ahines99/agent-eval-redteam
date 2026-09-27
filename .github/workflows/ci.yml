@@ -39,7 +39,7 @@ jobs:
           "$PY" -m pip install --require-hashes -r "$RUNNER_TEMP/runtime.txt"
           "$PY" -m pip install --no-deps dist/*.whl
           "$PY" scripts/smoke_installed.py --output-dir data/verification/wheel
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: verification-${{ matrix.os }}-${{ matrix.python }}
           path: |
@@ -87,7 +87,7 @@ jobs:
       - run: docker compose build
       - run: docker compose run --rm --entrypoint alembic eval upgrade head
       - run: uv run --frozen python scripts/mcp_walkthrough.py --container --output-dir data/verification/compose
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: compose-verification
           path: data/verification/compose/
