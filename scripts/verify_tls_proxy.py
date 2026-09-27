@@ -69,10 +69,33 @@ async def client(url: str, token: str, context: ssl.SSLContext) -> AsyncIterator
 
 async def verify_mcp(url: str, alpha: str, beta: str, context: ssl.SSLContext) -> dict[str, Any]:
     async with httpx2.AsyncClient(verify=context, trust_env=False) as http:
+        # A valid Caddy certificate proves proxy readiness, not that Uvicorn has finished importing.
+        # Poll without credentials; only the application's explicit auth refusal establishes readiness.
+        started = time.monotonic()
+        observed: dict[str, int] = {}
+        while time.monotonic() - started < 30:
+            try:
+                response = await http.get(url, timeout=2)
+            except httpx2.TransportError as exc:
+                key = type(exc).__name__  # Never include request headers or raw exception text.
+                observed[key] = observed.get(key, 0) + 1
+            else:
+                key = str(response.status_code)
+                observed[key] = observed.get(key, 0) + 1
+                if response.status_code == 401:
+                    break
+                if response.status_code not in {502, 503, 504}:
+                    raise AssertionError(f"unexpected upstream readiness response: HTTP {response.status_code}")
+            await asyncio.sleep(0.1)
+        else:
+            raise TimeoutError(f"backend auth boundary not ready after 30s; statuses/error classes: {observed}")
+        readiness = {"required_status": 401, "observed": observed,
+                     "elapsed_ms": round((time.monotonic() - started) * 1000, 3), "timeout_seconds": 30}
+        # These remain independent, strict checks after the startup-only readiness gate.
         missing = (await http.get(url)).status_code
         invalid_headers = {"Authorization": "Bearer " + "invalid-synthetic-token-" * 3}
         invalid = (await http.get(url, headers=invalid_headers)).status_code
-    assert missing == invalid == 401
+    assert missing == invalid == 401, f"auth boundary returned missing={missing}, invalid={invalid}; expected both 401"
     async with client(url, alpha, context) as connected:
         health = await connected.call_tool("healthcheck", {})
         assert not health.is_error and health.structured_content["status"] == "ok"
@@ -89,7 +112,8 @@ async def verify_mcp(url: str, alpha: str, beta: str, context: ssl.SSLContext) -
         denied = await connected.call_tool("register_agent", {
             "name": "denied", "version": "1", "adapter": "scripted", "owner": "tls-alpha"})
         assert denied.is_error
-    return {"missing_token_status": missing, "invalid_token_status": invalid, "authenticated_health": "ok",
+    return {"readiness": readiness, "missing_token_status": missing, "invalid_token_status": invalid,
+            "authenticated_health": "ok",
             "actor_spoof_overridden": True, "cross_tenant_agent_hidden": True, "read_scope_mutation_refused": True}
 
 

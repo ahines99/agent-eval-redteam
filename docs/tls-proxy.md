@@ -27,6 +27,12 @@ wsl.exe -d Ubuntu-22.04 -- docker build -t agent-eval-portfolio .
 ```
 
 The default evidence output is `docs/evidence/tls-proxy.json`; use `--output PATH` to change it.
+After TLS is ready, the script waits up to 30 seconds for the backend's unauthenticated HTTP 401
+response. Caddy can serve its certificate before Uvicorn has finished starting; temporary proxy
+502/503/504 responses are recorded during this readiness phase. Missing-token, invalid-token and
+authenticated MCP checks then run independently with their original strict assertions. Readiness
+timing and status counts appear in the evidence; a timeout reports status/error classes without
+request headers or credential data.
 The image option also permits CI to test its freshly built image without rebuilding it. The script
 records the application's image ID, so evidence identifies the tested artifact. It pulls Caddy by
 the immutable digest pinned in the script, which corresponds to the official
