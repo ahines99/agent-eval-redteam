@@ -46,23 +46,29 @@ The public website is a static demonstration; it does not accept credentials or 
 | F08 durable evidence | `docs/evidence/`, CI test/artifact uploads, `scripts/release_evidence.py` |
 | F09 claim accuracy | Current docs distinguish implemented, locally verified and externally executed capabilities |
 | F10 maintenance surface | Changelog, contribution guide, metadata and enabled GitHub private vulnerability reporting |
-| F11 compatibility | Remote Linux 3.12/3.13/3.14 and Windows 3.12 passed: 281 tests passed and eight PostgreSQL tests skipped per matrix job; all eight passed in the separate PostgreSQL job |
-| F12 scorer characterization | 33 traces / 35 proposed labels; nine disagreements retained; **independent human review pending** |
+| F11 compatibility | Published v0.2.0 matrix passed on Linux 3.12/3.13/3.14 and Windows 3.12: 281 tests passed and eight PostgreSQL tests skipped per matrix job; all eight passed in the separate PostgreSQL job. The human-review addendum adds a preservation/freshness regression check |
+| F12 scorer characterization | Alexander Hines approved all 33 rows / 35 labels on 2026-09-27; reviewed revision and regenerated evidence preserve all nine disagreements. Human review complete; development-exposed corpus |
 | F13 PostgreSQL concurrency | Eight actual PostgreSQL tests passed; contracts cover separate connections and competing actors |
 | F14 live model validation | Real Sonnet 5 run complete: 21 requests, $0.10417 estimated token cost, 1/10 pass, review gate; preserved first result |
 | F15 shared operations | Local HTTP operations and private Docker HTTPS deployment verified; no publicly hosted evaluation service claimed |
 | F16 telemetry | Real official Collector transport verified; no external trace storage/UI claim |
 
-## Remaining external input
+## Final scope and human review
 
 The user selected `ahines99/agent-eval-redteam` and a maximum $20 Anthropic budget.
 The first live experiment used a conservative $5 reservation ceiling, reserved $1.411024
 and recorded $0.10417 in estimated token usage cost. No Anthropic key is committed or included in the demo.
 See [live validation](live-validation.md) for the controls and billing limitations.
 
-An independent human must review [the label sheet](scorer-human-review.md) before the
-challenge corpus can be described as human-validated. Its labels and results remain visible;
-passing the bundled suite does not resolve the nine documented semantic disagreements.
+Alexander Hines approved every row of [the label sheet](scorer-human-review.md) without
+corrections on September 27, 2026. The [reviewed revision](../benchmarks/scorer-challenge.human-reviewed.json)
+and [regenerated evidence](evidence/scorer-characterization.human-reviewed.json) preserve the
+original labels and all nine disagreements. This closes the remaining human-review item;
+the corpus remains development-exposed and is not a blind accuracy benchmark.
+
+The published v0.2.0 artifacts preserve the pre-review snapshot. Its release includes a
+separate human-review addendum tied to the later review commit; original package and evidence
+checksums remain unchanged. All F01-F16 items are complete within the scope documented above.
 
 No production certification, signed administrator-resistant evidence, real-data compliance
 or generalized model-safety result is asserted. Those remain outside this synthetic portfolio.
@@ -74,8 +80,8 @@ Use the commands in [CONTRIBUTING](../CONTRIBUTING.md), [deployment](deployment.
 The [private HTTPS check](tls-proxy.md) also runs in the container CI job.
 The release evidence manifest binds package hashes and test reports to a source commit;
 GitHub Actions independently records the exact revision for each run.
-The [six-job compatibility run](https://github.com/ahines99/agent-eval-redteam/actions/runs/36357603138)
-passed on commit `08f99cc`; the release evidence includes the later tagged revision's own CI record.
+The [six-job release run](https://github.com/ahines99/agent-eval-redteam/actions/runs/36358321371)
+passed on tagged commit `2a76eeb`; the release evidence includes that exact revision's CI record.
 
 The first remote matrix exposed a corpus fingerprint difference caused solely by CRLF/LF checkouts. The fingerprint now normalizes line endings; labels and all nine disagreements are unchanged. A regression test covers both checkout forms.
 

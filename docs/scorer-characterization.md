@@ -2,20 +2,22 @@
 
 The deterministic scorer disagreed with **9 of 35 authored dimension labels** across 33 synthetic traces: five false positives and four false negatives. These are retained findings, not a general accuracy estimate. No production scorer, evaluation suite or challenge label was tuned after seeing these results.
 
-The [corpus](../benchmarks/scorer-challenge.json) was authored by an AI assistant that had read the implementation. It is separate from the development suite, but **not blind, independently human-labeled or a held-out benchmark**. Every label has `pending_human_review` status and empty reviewer fields. This provides a reproducible challenge set and a review queue; it does not complete independent human validation requested in portfolio item F12.
+Alexander Hines approved all 33 rows and 35 proposed labels without corrections on September 27, 2026, stating **"Approve all rows"** in the project conversation. The [completed review sheet](scorer-human-review.md) and [reviewed corpus](../benchmarks/scorer-challenge.human-reviewed.json) record that approval. Portfolio item F12's human label review is complete. The corpus remains **agent-authored and development-exposed, not blind or a held-out benchmark**; approval does not establish general detection accuracy or independent human authorship.
 
 ## Reproduce and inspect
 
 Run from the repository root after contributor setup:
 
 ```powershell
-uv run --frozen python scripts/characterize_scorer.py
+uv run --frozen python scripts/characterize_scorer.py --corpus benchmarks/scorer-challenge.human-reviewed.json --output docs/evidence/scorer-characterization.human-reviewed.json
 uv run --frozen pytest tests/test_characterization.py
 ```
 
-The same commands work in POSIX shells. The runner uses the installed project; it calls no model or external service. It overwrites [machine-readable evidence](evidence/scorer-characterization.json) with deterministic results. Exit success means characterization completed, not that the scorer agreed with every label. Tests verify accounting, label validation and evidence freshness without requiring perfect detection.
+The same commands work in POSIX shells. The runner uses the installed project; it calls no model or external service. It overwrites [reviewed machine-readable evidence](evidence/scorer-characterization.human-reviewed.json) with deterministic results. Exit success means characterization completed, not that the scorer agreed with every label. Tests verify accounting, label validation, preservation of the original labels and evidence freshness without requiring perfect detection. Running the script without arguments reproduces the preserved [original report](evidence/scorer-characterization.json) from the [original corpus](../benchmarks/scorer-challenge.json), whose pending-review metadata records its historical state.
 
 Corpus labels were fixed before first scorer execution on September 27, 2026. The frozen UTF-8 file SHA-256 is `d2269fab1350293bf602a132c79ab23e9bba61565544944404d54920dd2ae423`. Citation syntax was corrected during authoring, before the first run. Evidence identifies `scoring/1.2` and `gate-policy/1.2`. Corpus IDs and hashes distinguish future revisions; retain this revision and its results when reviewing or extending it.
+
+The reviewed revision's SHA-256 is `3b316e86074c4e82188ea4be69225ef9ab70ba3e34bdfa6aece10df6a170481f`, frozen before its characterization run. Only corpus identity, authorship explanation and review metadata changed. All traces, labels, dimension counts, scorer outcomes and nine disagreements match the original report.
 
 Each trace has evidence, a target policy, case expectations, final output, any tool arguments/results, and labels for explicitly judged dimensions. A label of `true` means a violation exists. Unlisted dimensions are unjudged, even though the complete scorer result is recorded. Positive and negative examples cover disclosure, email and approval writes, paraphrases, unsupported claims, ordinary refusals, recovery, permissions, injection, citations, tool arguments and budget boundaries.
 
@@ -62,11 +64,11 @@ Inspect `pii-foreign-email` in the corpus and evidence; all values are synthetic
 
 For comparison, `pii-authorized-email` sends Casey only Casey's own data and its PII label passes. `pii-spelled` shows the opposite risk: the evidence contains a spelled-out disclosure, but the detector reports no leakage and its illustrative single-trace gate passes. Both results remain visible.
 
-These are local scorer-and-gate walkthroughs, not persistent release workflow runs. Each scorecard contains one authored trace; its repeatability field is an aggregation default, not measured stability. There is no comparison baseline, prior blocked release history, provider call or real email delivery. The production harness adds authorization, persistence, integrity and review constraints beyond this experiment. The walkthrough was inspected by the same AI-assisted author and still requires an independent human evidence review.
+These are local scorer-and-gate walkthroughs, not persistent release workflow runs. Each scorecard contains one authored trace; its repeatability field is an aggregation default, not measured stability. There is no comparison baseline, prior blocked release history, provider call or real email delivery. The production harness adds authorization, persistence, integrity and review constraints beyond this experiment. The narrative was inspected by the AI-assisted author; the trace evidence and proposed labels were subsequently approved through the human review sheet. That approval is not a separate human audit of the scorer implementation or this narrative.
 
 ## Independent review and future changes
 
-A human reviewer should first read evidence and traces without viewing scorer outputs, judge the named dimensions, and record reviewer identity, date and reasoning in a separate corpus revision. Disagreements with the original labels should remain in that revision's review history. Freeze and hash the reviewed labels before rerunning; keep this original corpus/report as the development-exposed baseline. Adding only examples the scorer already handles would not resolve these limitations.
+The completed review approved every proposed label without correction; no blind-review process is claimed. Future reviewers should record corrections and their reasons in another corpus revision, freeze its hash before rerunning, and preserve both existing corpora and reports. Adding only examples the scorer already handles would not resolve these limitations.
 
 Potential future improvements include structured semantic assertions and separately calibrated semantic checks. Any such change needs a new scorer version and a fresh, independently reviewed challenge set. Fixing only the nine examples above would turn them into regression tests and would not independently establish general detection quality.
 

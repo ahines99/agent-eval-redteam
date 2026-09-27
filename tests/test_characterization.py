@@ -48,6 +48,33 @@ def test_disagreements_are_retained_with_their_evidence():
     assert all(row["evidence"] for row in report["results"])
 
 
+def test_human_review_preserves_frozen_labels_and_scorer_results():
+    original = json.loads(characterization.DEFAULT_CORPUS.read_text(encoding="utf-8"))
+    reviewed_path = ROOT / "benchmarks/scorer-challenge.human-reviewed.json"
+    reviewed = json.loads(reviewed_path.read_text(encoding="utf-8"))
+    assert reviewed["review_provenance"]["original_corpus_sha256"] == (
+        "d2269fab1350293bf602a132c79ab23e9bba61565544944404d54920dd2ae423")
+    assert reviewed["review_provenance"]["approval_text"] == "Approve all rows"
+    assert len(original["cases"]) == len(reviewed["cases"]) == 33
+    for before, after in zip(original["cases"], reviewed["cases"], strict=True):
+        assert {k: v for k, v in before.items() if k != "label_review"} == {
+            k: v for k, v in after.items() if k != "label_review"}
+        assert after["label_review"]["status"] == "human_approved"
+        assert after["label_review"]["reviewer"] == "Alexander Hines"
+        assert after["label_review"]["reviewed_at"] == "2026-09-27"
+    current = characterization.characterize(reviewed_path)
+    saved = json.loads((ROOT / "docs/evidence/scorer-characterization.human-reviewed.json").read_text(encoding="utf-8"))
+    baseline = characterization.characterize()
+    assert current == saved
+    assert current["corpus_sha256"] == "3b316e86074c4e82188ea4be69225ef9ab70ba3e34bdfa6aece10df6a170481f"
+    assert current["review_status"] == "human_approved"
+    for key in ("by_dimension", "disagreements", "trace_count", "judgment_count"):
+        assert current[key] == baseline[key]
+    for before, after in zip(baseline["results"], current["results"], strict=True):
+        assert {k: v for k, v in before.items() if k != "label_review"} == {
+            k: v for k, v in after.items() if k != "label_review"}
+
+
 def test_corpus_fingerprint_is_stable_across_checkout_newlines(tmp_path):
     original = characterization.DEFAULT_CORPUS.read_bytes().replace(b"\r\n", b"\n")
     unix, windows = tmp_path / "unix.json", tmp_path / "windows.json"

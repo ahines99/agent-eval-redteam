@@ -3,6 +3,14 @@
 This file describes repository changes. A version heading does not imply a published
 package, tag or successful external deployment; see release artifacts and validation evidence.
 
+## Human-review addendum - 2026-09-27
+
+- Recorded Alexander Hines's approval of all 33 scorer challenge rows and 35 dimension labels.
+- Preserved the original corpus/report and added a separately hashed reviewed revision and
+  regenerated evidence. Labels, traces and all nine scorer disagreements are unchanged.
+- Closed the portfolio's remaining human-review item; original v0.2.0 packages and evidence
+  remain unchanged, with review evidence published as a separate release addendum.
+
 ## 0.2.0 - 2026-09-27
 
 ### Evaluation and correctness
