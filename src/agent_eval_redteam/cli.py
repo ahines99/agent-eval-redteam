@@ -9,8 +9,9 @@ import sys
 
 from .adapters.repositories import Repository
 from .domain.services import EvalPlatform, RunSummary, bootstrap
+from .observability import configure_telemetry
 
-SUITE = ("support-core", "1.1.0")
+SUITE = ("support-core", "1.2.0")
 NEW_IN_110 = ("dup-customer-name", "contra-equal-recency", "missing-field-status", "missing-order-id")
 
 
@@ -33,8 +34,8 @@ async def demo(db_url: str) -> int:
 
 async def _demo(platform: EvalPlatform) -> int:
     bootstrap(platform)
-    print("Seeded support-core@1.0.0 (31 cases) and @1.1.0 (35 cases, 5 failure plans) plus three reference "
-          "agents. The demo runs @1.1.0.\n")
+    print("Seeded support-core@1.0.0, @1.1.0 and @1.2.0 plus three reference agents. "
+          "The demo runs @1.2.0 (35 cases, 5 failure plans).\n")
 
     agents = ["support-bot@1.0.0", "support-bot@1.1.0-rc1", "support-bot-naive@0.9.0"]
     for agent_id in agents:
@@ -44,12 +45,12 @@ async def _demo(platform: EvalPlatform) -> int:
 
     print("1) Successful path: hardened reference agent")
     good = await platform.start_run(agent_id=agents[0], suite_id=SUITE[0], suite_version=SUITE[1],
-                                    requested_by="alice", idempotency_key="demo-v1.0.0")
+                                    requested_by="alice", idempotency_key=f"demo-{SUITE[1]}-v1.0.0")
     print("   " + _line(good))
 
     print("\n2) Review path: 1.1.0-rc1 (flaky citations), gated against the last accepted run (support-bot@1.0.0)")
     rc = await platform.start_run(agent_id=agents[1], suite_id=SUITE[0], suite_version=SUITE[1],
-                                  requested_by="alice", idempotency_key="demo-v1.1.0-rc1")
+                                  requested_by="alice", idempotency_key=f"demo-{SUITE[1]}-v1.1.0-rc1")
     print("   " + _line(rc))
     for reason in rc.gate.reasons if rc.gate else []:
         print(f"   gate: {reason}")
@@ -57,13 +58,14 @@ async def _demo(platform: EvalPlatform) -> int:
         await platform.decide_gate(run_id=rc.run_id, approver="alice", decision="approve", reason="looks fine to me")
     except Exception as exc:  # noqa: BLE001 - demo prints the refusal
         print(f"   refused: {exc}")
-    rc = await platform.decide_gate(run_id=rc.run_id, approver="bob", decision="reject",
-                                    reason="Citation regressions on ten cases; fix before release")
+    if rc.status == "needs_review":
+        rc = await platform.decide_gate(run_id=rc.run_id, approver="bob", decision="reject",
+                                        reason="Citation regressions on ten cases; fix before release")
     print("   after human review: " + _line(rc))
 
     print("\n3) Controlled failure path: naive agent")
     bad = await platform.start_run(agent_id=agents[2], suite_id=SUITE[0], suite_version=SUITE[1],
-                                   requested_by="alice", idempotency_key="demo-v0.9.0")
+                                   requested_by="alice", idempotency_key=f"demo-{SUITE[1]}-v0.9.0")
     print("   " + _line(bad))
     for f in platform.get_findings(bad.run_id, "critical")[:5]:
         print(f"   critical: {f.statement}  (evidence {f.evidence[0].evidence_id[:8]})")
@@ -89,6 +91,7 @@ async def _demo(platform: EvalPlatform) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    configure_telemetry()
     parser = argparse.ArgumentParser(prog="agent-eval")
     sub = parser.add_subparsers(dest="cmd", required=True)
     d = sub.add_parser("demo", help="run the offline end-to-end demo")
@@ -112,7 +115,13 @@ def main(argv: list[str] | None = None) -> int:
     from .mcp_server import get_platform, mcp
 
     get_platform()  # create the schema and seed bundled suites/agents before serving
-    mcp.run(transport=args.transport)
+    if args.transport == "streamable-http":
+        import uvicorn
+
+        from .mcp_server import app
+        uvicorn.run(app, host="127.0.0.1", port=8000)
+    else:
+        mcp.run(transport="stdio")
     return 0
 
 

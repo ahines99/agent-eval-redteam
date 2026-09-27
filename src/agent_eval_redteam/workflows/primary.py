@@ -11,10 +11,11 @@ from typing import Any
 
 from ..adapters.agents import AgentAdapter, AgentOutcome, HarnessError
 from ..adapters.claude_agent import estimate_cost
-from ..adapters.repositories import Repository, canonical_hash, stable_id
-from ..adapters.sandbox import Sandbox, world_ids
+from ..adapters.repositories import LEASE_SECONDS, Repository, canonical_hash, stable_id
+from ..adapters.sandbox import Sandbox, load_world, world_ids
 from ..domain.models import Confidence, EvidenceRef, Finding
 from ..domain.policies import (
+    GATE_POLICY_VERSION,
     PolicyViolation,
     check_run_allowed,
     check_suite_content,
@@ -89,10 +90,14 @@ def trace_id_for(run_id: str, case_id: str, phase: Phase, repeat: int, failure: 
 
 
 async def run_case(adapter: AgentAdapter, agent: AgentRecord, suite: EvalSuite, case: EvalCase, *, run_id: str,
-                   phase: Phase, repeat: int, failure: FailurePlan | None = None) -> Trace:
+                   phase: Phase, repeat: int, failure: FailurePlan | None = None,
+                   before_call: Callable[[], None] | None = None) -> Trace:
     budget = suite.budget_for(case)
     sandbox = Sandbox.for_case(case, failure=failure, max_tool_calls=budget.max_tool_calls)
     agent_error = None
+    # Runs inside the concurrency semaphore, outside adapter error classification.
+    if before_call is not None:
+        before_call()
     try:
         with span("agent_case", run_id=run_id, case_id=case.case_id, phase=phase, repeat=repeat,
                   agent_id=agent.agent_id, model=adapter.model,
@@ -162,6 +167,7 @@ async def load_eval_suite(ctx: RunContext, env: EvalEnvironment) -> StepResult:
     return StepResult({
         "suite_id": suite.suite_id, "version": suite.version,
         "content_hash": suite.content_hash(),
+        "evaluation_identity": evaluation_identity(suite),
         "n_cases": len(suite.cases), "repeats": suite.repeats, "categories": dict(sorted(categories.items())),
         "security_cases": {cid: sorted(needs) for cid, needs in suite_authorizations(suite).items()},
         "authorization_id": auth.authorization_id if auth else None,
@@ -179,7 +185,9 @@ async def run_baseline(ctx: RunContext, env: EvalEnvironment) -> StepResult:
         for r in range(suite.repeats):
             ids.append(trace_id_for(ctx.run_id, case.case_id, "baseline", r, None))
             jobs.append(lambda case=case, r=r: run_case(adapter, agent, suite, case, run_id=ctx.run_id,
-                                                         phase="baseline", repeat=r))
+                                                         phase="baseline", repeat=r,
+                                                         before_call=lambda: _authorize_case(env, ctx, agent,
+                                                                                             suite, case)))
     await _run_jobs(env, jobs, ids)
     crashed = sum(1 for t in env.repo.traces_for(ctx.run_id, ("baseline",)) if t.agent_error)
     return StepResult({"n_traces": len(ids), "trace_ids": ids, "agent_errors": crashed})
@@ -198,10 +206,62 @@ async def inject_failures(ctx: RunContext, env: EvalEnvironment) -> StepResult:
         case = suite.case(plan.case_id)
         ids.append(trace_id_for(ctx.run_id, case.case_id, "injected", 0, plan))
         jobs.append(lambda case=case, plan=plan: run_case(adapter, agent, suite, case, run_id=ctx.run_id,
-                                                           phase="injected", repeat=0, failure=plan))
+                                                           phase="injected", repeat=0, failure=plan,
+                                                           before_call=lambda: _authorize_case(env, ctx, agent,
+                                                                                               suite, case)))
     await _run_jobs(env, jobs, ids)
     return StepResult({"n_traces": len(ids), "trace_ids": ids,
                        "plans": [p.model_dump(mode="json") for p in suite.failure_plans]})
+
+
+def evaluation_identity(suite: EvalSuite) -> dict[str, str]:
+    return {"suite_hash": suite.content_hash(), "world_hash": canonical_hash(load_world()),
+            "scoring_version": SCORING_VERSION, "gate_policy_version": GATE_POLICY_VERSION}
+
+
+def _stored_identity(repo: Repository, run_id: str) -> dict[str, str] | None:
+    score = repo.artifacts(run_id).get("Score traces")
+    return score["payload"].get("evaluation_identity") if score else None
+
+
+def _authorize_case(env: EvalEnvironment, ctx: RunContext, agent: AgentRecord, suite: EvalSuite,
+                    case: EvalCase) -> None:
+    env.repo.assert_execution(ctx.run_id)
+    env.authorize(agent, suite, [case.case_id])
+
+
+def validate_release_traces(ctx: RunContext, env: EvalEnvironment) -> list[Trace]:
+    """Require the exact suite manifest and intact evidence, excluding independent ad-hoc probes."""
+    suite = env.suite(ctx.run["suite_id"], ctx.run["suite_version"])
+    agent = env.agent(ctx.run["agent_id"])
+    expected: dict[str, tuple[str, Phase, int, FailurePlan | None]] = {}
+    for case in suite.cases:
+        for repeat in range(suite.repeats):
+            expected[trace_id_for(ctx.run_id, case.case_id, "baseline", repeat, None)] = (
+                case.case_id, "baseline", repeat, None)
+    if agent.environment is not Environment.PRODUCTION:
+        for plan in suite.failure_plans:
+            tid = trace_id_for(ctx.run_id, plan.case_id, "injected", 0, plan)
+            if tid in expected:
+                raise PolicyViolation("duplicate failure plans in release trace manifest")
+            expected[tid] = (plan.case_id, "injected", 0, plan)
+    stored = env.repo.traces_for(ctx.run_id)
+    if not stored:
+        raise RuntimeError("no traces to score")
+    if {trace.trace_id for trace in stored} != set(expected):
+        raise PolicyViolation("release trace manifest is incomplete or contains unexpected traces")
+    for trace in stored:
+        if (trace.run_id != ctx.run_id or trace.agent_id != agent.agent_id
+                or (trace.case_id, trace.phase, trace.repeat, trace.injected_failure) != expected[trace.trace_id]):
+            raise PolicyViolation(f"release trace identity does not match manifest: {trace.trace_id}")
+    artifacts = env.repo.artifacts(ctx.run_id)
+    for step, phase in (("Run baseline", "baseline"), ("Inject failures", "injected")):
+        artifact = artifacts.get(step)
+        phase_ids = {tid for tid, entry in expected.items() if entry[1] == phase}
+        if (artifact is None or set(artifact["payload"]["trace_ids"]) != phase_ids
+                or artifact["payload"]["n_traces"] != len(phase_ids)):
+            raise PolicyViolation(f"release trace manifest does not match {step} artifact")
+    return stored
 
 
 def findings_from_scores(run_id: str, scores: list[CaseScore], evidence_ids: dict[str, str]) -> list[Finding]:
@@ -232,9 +292,7 @@ def findings_from_scores(run_id: str, scores: list[CaseScore], evidence_ids: dic
 async def score_traces(ctx: RunContext, env: EvalEnvironment) -> StepResult:
     agent = env.agent(ctx.run["agent_id"])
     suite = env.suite(ctx.run["suite_id"], ctx.run["suite_version"])
-    traces = env.repo.traces_for(ctx.run_id)
-    if not traces:
-        raise RuntimeError("no traces to score")
+    traces = validate_release_traces(ctx, env)
     scores = []
     for t in traces:
         case = suite.case(t.case_id)
@@ -256,6 +314,7 @@ async def score_traces(ctx: RunContext, env: EvalEnvironment) -> StepResult:
                               outcomes=outcomes)
     return StepResult({
         "scoring_version": SCORING_VERSION,
+        "evaluation_identity": evaluation_identity(suite),
         "scorecard": card.model_dump(mode="json"),
         "case_outcomes": outcomes,
         "evidence_read": sorted(evidence_ids.values()),
@@ -285,10 +344,15 @@ def _accepted(repo: Repository, run_id: str) -> bool:
 
 
 def _comparison(env: EvalEnvironment, current: dict[str, Any], baseline_id: str) -> dict[str, Any]:
-    base = env.repo.get_run_metrics(baseline_id)
-    if base is None:
-        raise LookupError(f"baseline run {baseline_id} has no scored metrics")
-    same_suite = (current["suite_id"], current["suite_version"]) == (base["suite_id"], base["suite_version"])
+    current = env.repo.validate_run_metrics(current["run_id"])
+    base = env.repo.validate_run_metrics(baseline_id)
+    baseline_run = env.repo.get_run(baseline_id)
+    if baseline_run is None:
+        raise LookupError(f"baseline run {baseline_id} not found")
+    validate_release_traces(RunContext(run_id=baseline_id, run=baseline_run, actor="comparison"), env)
+    identity = _stored_identity(env.repo, current["run_id"])
+    same_suite = ((current["suite_id"], current["suite_version"]) == (base["suite_id"], base["suite_version"])
+                  and identity is not None and identity == _stored_identity(env.repo, baseline_id))
     result = compare(Scorecard.model_validate(current["scorecard"]), current["case_outcomes"],
                      Scorecard.model_validate(base["scorecard"]), base["case_outcomes"], same_suite_version=same_suite)
     base_run = env.repo.get_run(baseline_id) or {}
@@ -307,14 +371,15 @@ async def compare_versions(ctx: RunContext, env: EvalEnvironment) -> StepResult:
     assert current is not None
     run = env.repo.get_run(ctx.run_id) or ctx.run
     candidates = env.repo.metrics_history(current["agent_name"], current["suite_id"], current["suite_version"],
-                                          limit=50, before=run["created_at"])
+                                          limit=None, before=run["created_at"])
     gating_id = next((h["run_id"] for h in reversed(candidates)
-                      if h["run_id"] != ctx.run_id and _accepted(env.repo, h["run_id"])), None)
+                      if h["run_id"] != ctx.run_id and _accepted(env.repo, h["run_id"])
+                      and _stored_identity(env.repo, h["run_id"]) == _stored_identity(env.repo, ctx.run_id)), None)
     selection = f"last accepted run of {current['agent_name']} on {current['suite_id']}@{current['suite_version']}"
     artifact: dict[str, Any]
     if gating_id is None:
         artifact = {"baseline_run_id": None, "selection": selection,
-                    "note": "no earlier accepted run on this suite version; gating comparison skipped"}
+                    "note": "no earlier accepted run with this evaluation identity; gating comparison skipped"}
     else:
         artifact = {"selection": selection, **_comparison(env, current, gating_id)}
     requested_id = ctx.run.get("baseline_run_id")
@@ -323,6 +388,7 @@ async def compare_versions(ctx: RunContext, env: EvalEnvironment) -> StepResult:
 
 
 async def gate_release(ctx: RunContext, env: EvalEnvironment) -> StepResult:
+    validate_release_traces(ctx, env)
     card = Scorecard.model_validate(ctx.artifacts["Score traces"]["scorecard"])
     comparison = ctx.artifacts.get("Compare versions/models")
     gating = comparison if comparison and comparison.get("baseline_run_id") else None
@@ -346,6 +412,10 @@ async def monitor_regressions(ctx: RunContext, env: EvalEnvironment) -> StepResu
     current = env.repo.get_run_metrics(ctx.run_id)
     assert current is not None
     history = env.repo.metrics_history(current["agent_name"], current["suite_id"], current["suite_version"])
+    history = [h for h in history if _stored_identity(env.repo, h["run_id"])
+               == _stored_identity(env.repo, ctx.run_id)]
+    for historical in history:
+        env.repo.validate_run_metrics(historical["run_id"])
     series = [{"run_id": h["run_id"], "agent_id": h["agent_id"], "pass_rate": h["pass_rate"],
                "failing_cases": h["scorecard"]["failing_cases"]} for h in history]
     return StepResult({"suite_version": current["suite_version"], "window": len(series),
@@ -377,9 +447,43 @@ class FunctionalStep:
 
 async def run_primary(run_id: str, env: EvalEnvironment, *, actor: str,
                       overrides: dict[str, Callable[..., Awaitable[StepResult]]] | None = None) -> Status:
-    run = env.repo.get_run(run_id)
-    if run is None:
-        raise LookupError(f"run {run_id} not found")
-    fns = {**STEP_FUNCTIONS, **(overrides or {})}
-    steps = [FunctionalStep(name=name, fn=fns[name], env=env) for name in PROJECT_STEPS]
-    return await run_steps(RunContext(run_id=run_id, run=run, actor=actor), steps, env.repo)
+    owner = env.repo.claim_run(run_id)
+    try:
+        with env.repo.execution_scope(run_id, owner):
+            run = env.repo.get_run(run_id)
+            if run is None:
+                raise LookupError(f"run {run_id} not found")
+            ctx = RunContext(run_id=run_id, run=run, actor=actor)
+            artifacts = env.repo.artifacts(run_id)
+            if "Score traces" in artifacts:
+                validate_release_traces(ctx, env)
+            gate = artifacts.get(GATE_STEP)
+            unresolved = (gate and gate["payload"]["decision"]["outcome"] == "review"
+                          and env.repo.get_approval(run_id, GATE_STEP) is None)
+            if run["status"] == Status.COMPLETE and not unresolved:
+                return Status.COMPLETE
+            loaded = artifacts.get("Load eval suite")
+            if (loaded and loaded["payload"].get("evaluation_identity") != evaluation_identity(
+                    env.suite(run["suite_id"], run["suite_version"]))):
+                raise PolicyViolation("evaluation implementation changed; start a new run instead of resuming")
+            fns = {**STEP_FUNCTIONS, **(overrides or {})}
+            steps = [FunctionalStep(name=name, fn=fns[name], env=env) for name in PROJECT_STEPS]
+
+            async def heartbeat() -> None:
+                while True:
+                    await asyncio.sleep(LEASE_SECONDS / 3)
+                    env.repo.assert_execution(run_id)
+
+            worker = asyncio.create_task(run_steps(ctx, steps, env.repo))
+            pulse = asyncio.create_task(heartbeat())
+            try:
+                done, _ = await asyncio.wait((worker, pulse), return_when=asyncio.FIRST_COMPLETED)
+                if pulse in done:
+                    await pulse  # propagate lease loss and cancel outstanding model work
+                return await worker
+            finally:
+                worker.cancel()
+                pulse.cancel()
+                await asyncio.gather(worker, pulse, return_exceptions=True)
+    finally:
+        env.repo.release_run(run_id, owner)

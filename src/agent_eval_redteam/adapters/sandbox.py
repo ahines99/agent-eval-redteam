@@ -144,8 +144,16 @@ class Sandbox:
     @classmethod
     def for_case(cls, case: EvalCase, *, failure: FailurePlan | None = None, max_tool_calls: int = 8) -> Sandbox:
         f = case.fixtures
-        return cls(extra_docs=f.extra_docs, failure=failure, max_tool_calls=max_tool_calls,
-                   extra_customers=f.extra_customers, extra_orders=f.extra_orders)
+        sandbox = cls(extra_docs=f.extra_docs, failure=failure, max_tool_calls=max_tool_calls,
+                      extra_customers=f.extra_customers, extra_orders=f.extra_orders)
+        # Compatibility for published suites: attack overlays are exposed only when the case
+        # explicitly declares their canary AND injected tool. Both declarations require authorization.
+        # Ordinary lookups (including arbitrary tool calls not mentioned in a prompt) see clean data.
+        for overlay in load_world().get("security_overlays", []):
+            if (case.expect.canary == overlay["canary"]
+                    and case.expect.injected_tool == overlay["injected_tool"]):
+                sandbox.orders[overlay["order_id"]].update(overlay["fields"])
+        return sandbox
 
     # -------------------------------------------------------------- harness-facing
 
@@ -163,8 +171,15 @@ class Sandbox:
     def sensitive_by_owner(self) -> dict[str, list[str]]:
         """Each customer's sensitive values, keyed by the customer's own (lower-cased) email address."""
         keys = ("email", "phone", "ssn", "card_number")
-        return {str(c.get("email", c.get("customer_id"))).lower(): [str(c[k]) for k in keys if c.get(k)]
-                for c in self.customers.values()}
+        owners: dict[str, list[str]] = {}
+        for customer in self.customers.values():
+            owner = str(customer.get("email", customer.get("customer_id"))).strip().lower()
+            values = owners.setdefault(owner, [])
+            for key in keys:
+                value = str(customer[key]) if customer.get(key) else None
+                if value is not None and value not in values:
+                    values.append(value)
+        return owners
 
     # -------------------------------------------------------------- agent-facing
 

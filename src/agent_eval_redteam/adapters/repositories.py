@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
+from contextlib import contextmanager
+from contextvars import ContextVar
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -22,19 +24,25 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     create_engine,
+    func,
     insert,
+    or_,
     select,
+    text,
     update,
 )
-from sqlalchemy.engine import Engine
+from sqlalchemy.engine import Connection, Engine
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.pool import StaticPool
 
 from ..domain.models import AuditEvent, Confidence, EvidenceRef, Finding, canonical_hash
-from ..domain.policies import Authorization
+from ..domain.policies import Authorization, PolicyViolation
 from ..domain.project_models import AgentRecord, EvalSuite, Trace
 
 NAMESPACE = uuid.UUID("7f1d2c3e-4b5a-4c6d-9e8f-0a1b2c3d4e5f")
+LEASE_SECONDS = 120
+MAX_ACTIVE_RUNS = 8
+_execution: ContextVar[tuple[str, str] | None] = ContextVar("execution_lease", default=None)
 
 
 def now() -> datetime:
@@ -109,6 +117,13 @@ run_artifacts = Table(
     Column("content_hash", String(80), nullable=False),
     Column("created_at", DateTime(timezone=True), nullable=False),
     PrimaryKeyConstraint("run_id", "step"),
+)
+
+execution_leases = Table(
+    "execution_leases", metadata,
+    Column("run_id", String(36), ForeignKey("workflow_runs.run_id"), primary_key=True),
+    Column("owner", String(36)),
+    Column("expires_at", DateTime(timezone=True)),
 )
 
 traces = Table(
@@ -269,6 +284,116 @@ class Repository:
 
     # ------------------------------------------------------------ runs
 
+    def claim_run(self, run_id: str) -> str:
+        """Atomically claim an idle/expired run; a UUID fences every previous owner."""
+        owner = str(uuid.uuid4())
+        ts = now()
+        with self.engine.begin() as c:
+            if c.execute(select(workflow_runs.c.run_id).where(workflow_runs.c.run_id == run_id)).first() is None:
+                raise LookupError(f"run {run_id} not found")
+            if self.engine.dialect.name == "postgresql":
+                # Serialize capacity admission across processes, without adding a singleton table.
+                c.execute(text("SELECT pg_advisory_xact_lock(713401829)"))
+            # SAVEPOINT keeps a concurrent insert conflict from aborting PostgreSQL's transaction.
+            try:
+                with c.begin_nested():
+                    c.execute(insert(execution_leases).values(run_id=run_id))
+            except IntegrityError:
+                pass
+            # This write also acquires SQLite's database writer lock before counting active leases.
+            c.execute(update(execution_leases).where(execution_leases.c.run_id == run_id)
+                      .values(owner=execution_leases.c.owner))
+            ts = now()
+            active = c.execute(select(func.count()).select_from(execution_leases).where(
+                execution_leases.c.owner.is_not(None), execution_leases.c.expires_at > ts)).scalar_one()
+            if active >= MAX_ACTIVE_RUNS:
+                raise PolicyViolation(f"concurrent run limit reached ({MAX_ACTIVE_RUNS}); retry later")
+            claimed = c.execute(update(execution_leases).where(
+                execution_leases.c.run_id == run_id,
+                or_(execution_leases.c.owner.is_(None), execution_leases.c.expires_at <= ts),
+            ).values(owner=owner, expires_at=ts + timedelta(seconds=LEASE_SECONDS)))
+            if claimed.rowcount != 1:
+                raise PolicyViolation("run is already executing; resume after its execution lease expires")
+        return owner
+
+    @contextmanager
+    def execution_scope(self, run_id: str, owner: str):
+        token = _execution.set((run_id, owner))
+        try:
+            yield
+        finally:
+            _execution.reset(token)
+
+    def _fence(self, c: Connection, run_id: str | None) -> None:
+        scope = _execution.get()
+        if scope is None or scope[0] != run_id:
+            return
+        ts = now()
+        result = c.execute(update(execution_leases).where(
+            execution_leases.c.run_id == run_id, execution_leases.c.owner == scope[1],
+            execution_leases.c.expires_at > ts,
+        ).values(expires_at=ts + timedelta(seconds=LEASE_SECONDS)))
+        if result.rowcount != 1:
+            raise PolicyViolation("execution lease lost; stale worker may not write")
+
+    def assert_execution(self, run_id: str) -> None:
+        with self.engine.begin() as c:
+            self._fence(c, run_id)
+
+    def release_run(self, run_id: str, owner: str) -> None:
+        with self.engine.begin() as c:
+            c.execute(update(execution_leases).where(
+                execution_leases.c.run_id == run_id, execution_leases.c.owner == owner,
+            ).values(owner=None, expires_at=None))
+
+    def has_active_lease(self, run_id: str) -> bool:
+        with self.engine.connect() as c:
+            return c.execute(select(execution_leases.c.run_id).where(
+                execution_leases.c.run_id == run_id, execution_leases.c.owner.is_not(None),
+                execution_leases.c.expires_at > now(),
+            )).first() is not None
+
+    def recover_review_state(self, run_id: str) -> bool:
+        """Repair legacy checkpoints without letting a reader interfere with an active worker."""
+        gate = self.artifacts(run_id).get("Gate release")
+        if (gate is None or gate["payload"]["decision"]["outcome"] != "review"
+                or self.get_approval(run_id, "Gate release") is not None):
+            return False
+        try:
+            owner = self.claim_run(run_id)
+        except PolicyViolation:
+            return False
+        try:
+            with self.execution_scope(run_id, owner):
+                if self.get_approval(run_id, "Gate release") is not None:
+                    return False
+                self.update_run(run_id, status="needs_review", current_step="Gate release")
+            return True
+        finally:
+            self.release_run(run_id, owner)
+
+    def transition_run(self, run_id: str, events: list[AuditEvent], **values: Any) -> None:
+        with self.engine.begin() as c:
+            self._fence(c, run_id)
+            c.execute(update(workflow_runs).where(workflow_runs.c.run_id == run_id)
+                      .values(**values, updated_at=now()))
+            for event in events:
+                c.execute(insert(audit_events).values(**event.model_dump(mode="python")))
+
+    def checkpoint(self, run_id: str, step: str, payload: dict[str, Any], events: list[AuditEvent],
+                   *, pause: bool) -> str:
+        """The artifact, audit events and pause state commit together or not at all."""
+        digest = canonical_hash(payload)
+        with self.engine.begin() as c:
+            self._fence(c, run_id)
+            c.execute(insert(run_artifacts).values(run_id=run_id, step=step, payload=payload,
+                                                   content_hash=digest, created_at=now()))
+            for event in events:
+                c.execute(insert(audit_events).values(**event.model_dump(mode="python")))
+            c.execute(update(workflow_runs).where(workflow_runs.c.run_id == run_id).values(
+                status="needs_review" if pause else "running", current_step=step, updated_at=now()))
+        return digest
+
     def create_run(self, *, run_id: str, agent_id: str, suite_id: str, suite_version: str, requested_by: str,
                    idempotency_key: str | None, baseline_run_id: str | None) -> bool:
         """Insert a run; returns False if the idempotency key already exists."""
@@ -298,12 +423,14 @@ class Repository:
 
     def update_run(self, run_id: str, **values: Any) -> None:
         with self.engine.begin() as c:
+            self._fence(c, run_id)
             c.execute(update(workflow_runs).where(workflow_runs.c.run_id == run_id).values(**values,
                                                                                            updated_at=now()))
 
     def save_artifact(self, run_id: str, step: str, payload: dict[str, Any]) -> str:
         digest = canonical_hash(payload)
         with self.engine.begin() as c:
+            self._fence(c, run_id)
             exists = c.execute(select(run_artifacts.c.step).where(run_artifacts.c.run_id == run_id,
                                                                   run_artifacts.c.step == step)).first()
             if exists:
@@ -318,6 +445,9 @@ class Repository:
         with self.engine.connect() as c:
             rows = c.execute(select(run_artifacts).where(run_artifacts.c.run_id == run_id)
                              .order_by(run_artifacts.c.created_at)).mappings().all()
+        for row in rows:
+            if canonical_hash(row["payload"]) != row["content_hash"]:
+                raise PolicyViolation(f"artifact integrity check failed: {run_id}/{row['step']}")
         return {r["step"]: {"payload": r["payload"], "content_hash": r["content_hash"]} for r in rows}
 
     # ------------------------------------------------------------ traces and evidence
@@ -328,6 +458,7 @@ class Repository:
         digest = canonical_hash(body)
         evidence_id = stable_id("evidence", trace.trace_id)
         with self.engine.begin() as c:
+            self._fence(c, trace.run_id)
             if c.execute(select(traces.c.trace_id).where(traces.c.trace_id == trace.trace_id)).first():
                 return evidence_id
             c.execute(insert(traces).values(trace_id=trace.trace_id, run_id=trace.run_id, case_id=trace.case_id,
@@ -346,9 +477,22 @@ class Repository:
 
     def traces_for(self, run_id: str, phases: tuple[str, ...] = ("baseline", "injected")) -> list[Trace]:
         with self.engine.connect() as c:
-            rows = c.execute(select(traces.c.body).where(traces.c.run_id == run_id, traces.c.phase.in_(phases))
-                             .order_by(traces.c.case_id, traces.c.phase, traces.c.repeat)).all()
-        return [Trace.model_validate(r[0]) for r in rows]
+            rows = c.execute(select(traces).where(traces.c.run_id == run_id, traces.c.phase.in_(phases))
+                             .order_by(traces.c.case_id, traces.c.phase, traces.c.repeat)).mappings().all()
+            result = []
+            for row in rows:
+                body = row["body"]
+                digest = canonical_hash(body)
+                ev = c.execute(select(evidence).where(
+                    evidence.c.evidence_id == stable_id("evidence", row["trace_id"]))).mappings().first()
+                if (digest != row["content_hash"] or ev is None or ev["content_hash"] != digest
+                        or ev["run_id"] != run_id or ev["source_uri"] != f"trace://{row['trace_id']}"
+                        or ev["source_type"] != "agent_trace"
+                        or ev["metadata"] != {key: row[key] for key in ("case_id", "phase", "repeat")}
+                        or any(body[key] != row[key] for key in ("trace_id", "run_id", "case_id", "phase", "repeat"))):
+                    raise PolicyViolation(f"trace/evidence integrity check failed: {row['trace_id']}")
+                result.append(Trace.model_validate(body))
+        return result
 
     def trace_exists(self, trace_id: str) -> bool:
         with self.engine.connect() as c:
@@ -359,6 +503,17 @@ class Repository:
             row = c.execute(select(evidence).where(evidence.c.evidence_id == evidence_id)).mappings().first()
         if not row:
             return None
+        trace_id = row["source_uri"].removeprefix("trace://")
+        trace = self.get_trace(trace_id)
+        if (trace is None or row["source_type"] != "agent_trace"
+                or stable_id("evidence", trace_id) != evidence_id
+                or row["source_uri"] != f"trace://{trace_id}"
+                or row["run_id"] != trace[0].run_id
+                or row["content_hash"] != trace[1]
+                or canonical_hash(trace[0].model_dump(mode="json")) != trace[1]
+                or row["metadata"] != {"case_id": trace[0].case_id, "phase": trace[0].phase,
+                                       "repeat": trace[0].repeat}):
+            raise PolicyViolation(f"trace/evidence integrity check failed: {evidence_id}")
         return EvidenceRef(evidence_id=row["evidence_id"], source_type=row["source_type"], uri=row["source_uri"],
                            content_hash=row["content_hash"], as_of=_aware(row["as_of"]))
 
@@ -366,6 +521,7 @@ class Repository:
 
     def save_finding(self, run_id: str, f: Finding) -> None:
         with self.engine.begin() as c:
+            self._fence(c, run_id)
             if c.execute(select(findings.c.finding_id).where(findings.c.finding_id == f.finding_id)).first():
                 return
             c.execute(insert(findings).values(
@@ -386,9 +542,12 @@ class Repository:
                               .where(evidence.c.run_id == run_id)).mappings().all()
         by_finding: dict[str, list[EvidenceRef]] = {}
         for link in links:
-            by_finding.setdefault(link["finding_id"], []).append(EvidenceRef(
-                evidence_id=link["evidence_id"], source_type=link["source_type"], uri=link["source_uri"],
-                content_hash=link["content_hash"], as_of=_aware(link["as_of"])))
+            ref = self.get_evidence(link["evidence_id"])
+            if ref is None:
+                raise PolicyViolation(f"finding evidence missing: {link['evidence_id']}")
+            by_finding.setdefault(link["finding_id"], []).append(ref)
+        if any(r["finding_id"] not in by_finding for r in rows):
+            raise PolicyViolation("finding evidence missing")
         return [Finding(finding_id=r["finding_id"], finding_type=r["finding_type"], title=r["title"],
                         statement=r["statement"], severity=r["severity"], confidence=Confidence(r["confidence"]),
                         case_id=r["case_id"], evidence=by_finding.get(r["finding_id"], []),
@@ -397,12 +556,14 @@ class Repository:
     # ------------------------------------------------------------ approvals, metrics, audit
 
     def insert_approval(self, *, run_id: str, gate: str, decision: str, approver: str, reason: str,
-                        override: bool) -> bool:
+                        override: bool, audit_event: AuditEvent | None = None) -> bool:
         try:
             with self.engine.begin() as c:
                 c.execute(insert(approvals).values(approval_id=str(uuid.uuid4()), run_id=run_id, gate=gate,
                                                    decision=decision, approver=approver, reason=reason,
                                                    override=override, created_at=now()))
+                if audit_event is not None:
+                    c.execute(insert(audit_events).values(**audit_event.model_dump(mode="python")))
         except IntegrityError:
             return False
         return True
@@ -416,6 +577,7 @@ class Repository:
     def save_run_metrics(self, *, run_id: str, agent_name: str, suite_id: str, suite_version: str,
                          scorecard: dict[str, Any], outcomes: dict[str, bool]) -> None:
         with self.engine.begin() as c:
+            self._fence(c, run_id)
             if c.execute(select(run_metrics.c.run_id).where(run_metrics.c.run_id == run_id)).first():
                 c.execute(update(run_metrics).where(run_metrics.c.run_id == run_id).values(
                     pass_rate=scorecard["pass_rate"], scorecard=scorecard, case_outcomes=outcomes))
@@ -425,7 +587,7 @@ class Repository:
                                                  scorecard=scorecard, case_outcomes=outcomes, created_at=now()))
 
     def metrics_history(self, agent_name: str, suite_id: str, suite_version: str | None = None, *,
-                        limit: int = 10, before: datetime | None = None) -> list[dict[str, Any]]:
+                        limit: int | None = 10, before: datetime | None = None) -> list[dict[str, Any]]:
         """Most recent scored runs for an agent name + suite (+ version), oldest first, excluding FAILED runs.
 
         Ordered by when the *run* was requested, so a baseline can only ever be a run that started earlier.
@@ -455,8 +617,25 @@ class Repository:
             row = c.execute(select(run_metrics).where(run_metrics.c.run_id == run_id)).mappings().first()
         return dict(row) if row else None
 
+    def validate_run_metrics(self, run_id: str) -> dict[str, Any]:
+        """Verify denormalized comparison/monitoring inputs against their committed artifact."""
+        metrics = self.get_run_metrics(run_id)
+        run = self.get_run(run_id)
+        if metrics is None or run is None:
+            raise LookupError(f"run {run_id} has no scored metrics")
+        score = self.artifacts(run_id).get("Score traces")
+        agent = self.get_agent(run["agent_id"])
+        if (score is None or score["payload"]["scorecard"] != metrics["scorecard"]
+                or score["payload"]["case_outcomes"] != metrics["case_outcomes"]
+                or metrics["pass_rate"] != score["payload"]["scorecard"]["pass_rate"]
+                or (metrics["suite_id"], metrics["suite_version"]) != (run["suite_id"], run["suite_version"])
+                or agent is None or metrics["agent_name"] != agent.name):
+            raise PolicyViolation(f"scored metrics do not match verified artifact: {run_id}")
+        return metrics
+
     def audit(self, event: AuditEvent) -> None:
         with self.engine.begin() as c:
+            self._fence(c, event.run_id)
             c.execute(insert(audit_events).values(**event.model_dump(mode="python")))
 
     def audit_trail(self, run_id: str) -> list[dict[str, Any]]:

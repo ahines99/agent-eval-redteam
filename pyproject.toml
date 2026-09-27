@@ -4,9 +4,12 @@ build-backend = "hatchling.build"
 
 [project]
 name = "agent-eval-redteam"
-version = "0.1.0"
+version = "0.2.0"
 description = "Evaluate and red-team AI agents: tool correctness, permission adherence, prompt-injection resistance, PII leakage, citations, recovery, and release gating over MCP."
 readme = "README.md"
+license = "MIT"
+authors = [{name = "Alexander Hines"}]
+license-files = ["LICENSE"]
 requires-python = ">=3.12"
 dependencies = [
   "mcp[cli]>=2.2,<3",
@@ -15,12 +18,21 @@ dependencies = [
   "opentelemetry-api>=1.27",
 ]
 
+[project.urls]
+Repository = "https://github.com/ahines99/agent-eval-redteam"
+Documentation = "https://github.com/ahines99/agent-eval-redteam#readme"
+Issues = "https://github.com/ahines99/agent-eval-redteam/issues"
+Demo = "https://ahines99.github.io/agent-eval-redteam/"
+
 [project.optional-dependencies]
 # Live-model adapter. The deterministic reference agents need no network or API key.
 claude = ["anthropic>=1.0,<2"]
 # Point DATABASE_URL at PostgreSQL instead of the default local SQLite file.
 postgres = ["psycopg[binary]>=3.2"]
-dev = ["pytest>=8", "anyio>=4", "ruff>=0.7", "mypy>=1.12"]
+migrations = ["alembic>=1.13,<2"]
+observability = ["opentelemetry-sdk>=1.27", "opentelemetry-exporter-otlp-proto-http>=1.27"]
+dev = ["pytest>=8", "anyio>=4", "ruff>=0.7", "mypy>=1.12", "pytest-cov>=6", "build>=1.2", "hatchling>=1.25",
+       "alembic>=1.13,<2", "pip-audit>=2.7"]
 
 [project.scripts]
 agent-eval = "agent_eval_redteam.cli:main"
@@ -32,6 +44,14 @@ packages = ["src/agent_eval_redteam"]
 pythonpath = ["src"]
 testpaths = ["tests"]
 addopts = "-p no:asyncio"
+markers = ["postgres: integration tests requiring TEST_POSTGRES_URL pointing to a disposable database"]
+
+[tool.coverage.run]
+source = ["agent_eval_redteam"]
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 90
 
 [tool.ruff]
 line-length = 120

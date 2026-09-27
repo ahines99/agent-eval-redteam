@@ -5,8 +5,8 @@ so Claude, another MCP client, or the CLI all get identical behaviour. Capabilit
 five boundaries from the design (agent registry, eval runner, trace store, failure injector, policy
 engine) and served from one process; split them when their authorization or deployment needs diverge.
 
-Local: `agent-eval serve` (stdio). Deployed: `uvicorn agent_eval_redteam.mcp_server:app` behind an
-authenticating reverse proxy; the server itself performs no authentication in v0.1.
+Local: `agent-eval serve` (trusted stdio). Shared HTTP requires AGENT_EVAL_AUTH_FILE credentials,
+server-derived principals and per-tool scopes; terminate TLS at the deployment proxy.
 """
 
 from __future__ import annotations
@@ -15,6 +15,7 @@ import json
 import os
 from collections.abc import Iterator
 from contextlib import contextmanager
+from threading import RLock
 from typing import Annotated, Any, Literal
 
 from mcp.server import MCPServer
@@ -36,17 +37,32 @@ from .domain.project_models import (
     FailureType,
 )
 from .domain.services import EvalPlatform, RunSummary, bootstrap
+from .observability import configure_telemetry
+from .server_security import AuthenticatedHTTP, actor_identity, current_principal, require_scope
 
 mcp = MCPServer("Agent Evaluation and Red-Team Platform")
 
 _platform: EvalPlatform | None = None
+_tenant_platforms: dict[tuple[str, str], EvalPlatform] = {}
+_platform_lock = RLock()
 
 
 def get_platform() -> EvalPlatform:
     global _platform
-    if _platform is None:
-        _platform = EvalPlatform(Repository(os.environ.get("DATABASE_URL", "sqlite:///./data/agent_eval.db")))
-        bootstrap(_platform)
+    principal = current_principal.get()
+    if principal is not None:
+        key = (principal.tenant, principal.database_url)
+        with _platform_lock:
+            if key not in _tenant_platforms:
+                tenant_platform = EvalPlatform(Repository(principal.database_url))
+                bootstrap(tenant_platform)
+                _tenant_platforms[key] = tenant_platform
+            return _tenant_platforms[key]
+    with _platform_lock:
+        if _platform is None:
+            local_platform = EvalPlatform(Repository(os.environ.get("DATABASE_URL", "sqlite:///./data/agent_eval.db")))
+            bootstrap(local_platform)
+            _platform = local_platform
     return _platform
 
 
@@ -57,9 +73,10 @@ def set_platform(platform: EvalPlatform | None) -> None:
 
 
 @contextmanager
-def _domain_errors() -> Iterator[None]:
+def _domain_errors(scope: str = "read") -> Iterator[None]:
     """Expected refusals reach the client verbatim; unexpected crashes stay opaque."""
     try:
+        require_scope(scope)
         yield
     except PolicyViolation as exc:
         raise ToolError(f"policy refused: {exc}") from exc
@@ -127,6 +144,7 @@ class RegressionReport(BaseModel):
 @mcp.tool(annotations=READ_ONLY)
 def healthcheck() -> Health:
     """Return service health and registry counts."""
+    require_scope("read")
     p = get_platform()
     return Health(status="ok", version=__version__, agents=len(p.list_agents()), suites=len(p.list_suites()))
 
@@ -143,7 +161,8 @@ def register_agent(name: str, version: str, adapter: AdapterKind, owner: str,
     adapter="scripted" takes config {"preset": "hardened"|"flaky-candidate"|"naive"} or {"flaws": [...]}.
     adapter="claude" takes config {"model", "system_prompt", "effort", "max_turns"}.
     """
-    with _domain_errors():
+    with _domain_errors("register"):
+        owner = actor_identity(owner)
         return get_platform().register_agent(AgentSpec(name=name, version=version, adapter=adapter, owner=owner,
                                                        environment=environment, config=config or {}))
 
@@ -151,6 +170,7 @@ def register_agent(name: str, version: str, adapter: AdapterKind, owner: str,
 @mcp.tool(annotations=READ_ONLY)
 def list_agents() -> AgentList:
     """List registered agents under test."""
+    require_scope("read")
     return AgentList(agents=get_platform().list_agents())
 
 
@@ -160,13 +180,15 @@ def list_agents() -> AgentList:
 @mcp.tool(annotations=READ_ONLY)
 def list_eval_suites() -> SuiteList:
     """List registered, versioned eval suites."""
+    require_scope("read")
     return SuiteList(suites=[SuiteInfo(**s) for s in get_platform().list_suites()])
 
 
 @mcp.tool(annotations=ADDITIVE)
 def register_eval_suite(suite: EvalSuite, registered_by: str) -> SuiteRegistration:
     """Register a new eval suite version. Versions are immutable and PII in fixtures must be synthetic."""
-    with _domain_errors():
+    with _domain_errors("register"):
+        registered_by = actor_identity(registered_by)
         return SuiteRegistration(**get_platform().register_suite(suite, registered_by))
 
 
@@ -178,7 +200,8 @@ async def run_eval_suite(agent_id: str, suite_id: str, version: str, requested_b
     Returns when the run completes, fails, or pauses at the release gate for human review.
     Reusing an idempotency_key returns the original run instead of starting another.
     """
-    with _domain_errors():
+    with _domain_errors("run"):
+        requested_by = actor_identity(requested_by)
         return await get_platform().start_run(agent_id=agent_id, suite_id=suite_id, suite_version=version,
                                               requested_by=requested_by, idempotency_key=idempotency_key,
                                               baseline_run_id=baseline_run_id)
@@ -194,7 +217,8 @@ def get_run(run_id: str) -> RunSummary:
 @mcp.tool(annotations=ToolAnnotations(read_only_hint=False, destructive_hint=False, idempotent_hint=True))
 async def resume_run(run_id: str, actor: str) -> RunSummary:
     """Resume a failed or interrupted run from its first incomplete step (completed steps are reused)."""
-    with _domain_errors():
+    with _domain_errors("run"):
+        actor = actor_identity(actor)
         return await get_platform().resume_run(run_id, actor=actor)
 
 
@@ -209,6 +233,7 @@ def get_findings(run_id: str, severity: Literal["critical", "major", "minor"] | 
     The read is recorded in the run's audit trail (evidence ids + reader).
     """
     with _domain_errors():
+        reader = actor_identity(reader)
         return FindingList(run_id=run_id, findings=get_platform().get_findings(run_id, severity, reader=reader))
 
 
@@ -219,6 +244,7 @@ def get_trace(trace_id: str, reader: str = "mcp-client") -> TraceRecord:
     The read is recorded in the run's audit trail (evidence id + reader).
     """
     with _domain_errors():
+        reader = actor_identity(reader)
         return TraceRecord(**get_platform().get_trace(trace_id, reader=reader))
 
 
@@ -232,7 +258,8 @@ async def inject_failure(run_id: str, case_id: str, tool: str, failure_type: Fai
 
     Failures are injected at the sandbox tool boundary only. destructive=True is always refused.
     """
-    with _domain_errors():
+    with _domain_errors("run"):
+        requested_by = actor_identity(requested_by)
         return await get_platform().inject_failure(run_id=run_id, case_id=case_id, tool=tool,
                                                    failure_type=failure_type.value, requested_by=requested_by,
                                                    destructive=destructive)
@@ -246,7 +273,8 @@ def authorize_security_testing(agent_id: str, approved_by: str,
                                categories: list[Literal["prompt_injection", "pii"]], reason: str,
                                expires_in_hours: Annotated[int, Field(ge=1, le=72)] = 24) -> Authorization:
     """Record a human authorization to run attack categories against a non-production agent."""
-    with _domain_errors():
+    with _domain_errors("authorize"):
+        approved_by = actor_identity(approved_by)
         return get_platform().authorize_security_testing(agent_id=agent_id, approved_by=approved_by,
                                                          categories=list(categories), reason=reason,
                                                          expires_in_hours=expires_in_hours)
@@ -260,7 +288,8 @@ async def decide_release_gate(run_id: str, approver: str, decision: Literal["app
     Only 'review' outcomes accept a decision; 'block' (critical failures) can never be approved.
     The approver must differ from the requester. This records a decision; it deploys nothing.
     """
-    with _domain_errors():
+    with _domain_errors("approve"):
+        approver = actor_identity(approver)
         return await get_platform().decide_gate(run_id=run_id, approver=approver, decision=decision, reason=reason)
 
 
@@ -270,6 +299,7 @@ def get_regression_report(agent_name: str, suite_id: str, suite_version: str | N
 
     Alerts are computed per suite version, since pass rates on different case sets aren't comparable.
     """
+    require_scope("read")
     return RegressionReport(**get_platform().regression_report(agent_name, suite_id, suite_version))
 
 
@@ -352,4 +382,5 @@ def plan_redteam(agent_id: str) -> str:
     )
 
 
-app = mcp.streamable_http_app()
+configure_telemetry()
+app = AuthenticatedHTTP(mcp.streamable_http_app(stateless_http=True, max_request_body_size=1_048_576))

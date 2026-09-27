@@ -17,15 +17,19 @@ You never approve a release yourself.
 2. **Check authorization.** Any case that behaves like an attack needs a human to have recorded
    `authorize_security_testing` for this exact `agent_id`, whatever the case's category label. That covers
    canaries, planted instructions, extra fixtures, sensitive-data requests, and email recipients. Most
-   realistic suites qualify. Authorization is re-checked every time the agent is called, so it must still
+   realistic suites qualify. Authorization is re-checked immediately before each case adapter invocation, so it must still
    be valid when a run resumes. If a run is refused or fails for authorization, stop and ask a human.
    Don't record it yourself on the user's behalf unless they explicitly name themselves as the approver.
 3. **Run.** Call `run_eval_suite` with a stable `idempotency_key` (≤200 characters, e.g.
-   `<agent_id>:<suite>@<version>:<ticket>`), so retries never double-run.
+   `<agent_id>:<suite>@<version>:<ticket>`), so retries reuse the same run; concurrent execution is refused while a lease is held.
    - The **gate** always compares against the last accepted run of the same agent name on the same suite
-     version. You can't and shouldn't choose that baseline.
+     version and evaluation identity (suite/world hashes, scorer and gate-policy versions). You cannot choose that baseline.
    - Pass `baseline_run_id` only for an extra, informational comparison, e.g. against another model. It
      must already be scored.
+   - Completed persisted traces are reused. A crash before trace persistence can repeat a provider call;
+     do not promise exactly-once billing. Cost thresholds score results and do not cap provider spend.
+   - HTTP derives actor identity from a token and checks scopes. Stdio trusts its local caller. Never
+     invent another person's identifier to bypass a review or authorization requirement.
 4. **Read the result** (`get_run`, then `runs://{run_id}/report`):
    - `status=failed`: read `error` and act on its type.
      - A `policy:` error needs a human or a config change.
@@ -42,9 +46,9 @@ You never approve a release yourself.
 6. **Compare.**
    - `comparison` is the gating one. Its `regressions` (passed before, fail now) matter more than the
      headline pass-rate delta.
-   - `requested_comparison` is informational. If its `comparable` is false (different suite id or
-     version), say it is only indicative.
-   - Call a delta "significant" only if the platform says so (non-overlapping 95% Wilson CIs).
+   - `requested_comparison` is informational. If its `comparable` is false (different suite or
+     evaluation identity), say it is only indicative.
+   - For comparable runs, call a delta "significant" only if the platform says so (non-overlapping 95% Wilson CIs).
 
 # Decision rules
 | Situation | What you say |

@@ -1,3 +1,66 @@
+# Current implementation handoff - 0.2.0 (2026-09-27)
+
+For the latest portfolio completion state and verification, see [docs/VERIFICATION.md](docs/VERIFICATION.md).
+
+This section supersedes all status statements, acceptance checkboxes, counts and skeletons
+in the historical material below. The earlier plan and audit notes are preserved as history,
+not as current instructions or proof that every possible defect has been eliminated.
+
+## Implemented and locally verified
+
+- Packaged Python CLI and typed MCP surface; four distinct procedural skills.
+- Versioned synthetic suites: current `support-core@1.2.0` has 35 cases. Published 1.0.0 and
+  1.1.0 JSON files are unchanged. New content/success/clarification assertions are explicit.
+- Deterministic scoring/1.2, gate-policy/1.2 and schema label 1.2; complete trace manifests,
+  evidence/artifact hash checks and metric consistency checks before release decisions.
+- Atomic checkpoints, expiring ownership leases, fenced workflow writes and recovery of
+  unresolved review gates. Persisted work is reused; a crash before trace persistence can
+  repeat an external provider call. No exactly-once billing guarantee is made.
+- Baselines and monitoring respect suite/world/scorer/gate identity. Prior blocks bind the
+  agent version across suites; caller-provided baselines remain informational.
+- Authorization immediately before each case adapter invocation; benign shared world;
+  expanded disclosure checks; bounded suite/run/HTTP admission.
+- Optional authenticated HTTP: hashed service tokens, server-derived actors, scopes and
+  separate tenant databases. Stdio is locally trusted. TLS and operator provisioning remain
+  deployment responsibilities; the token option is not an OIDC login system.
+- Alembic initial/lease migrations; dependency lock and audit tooling; CI definitions;
+  Docker/Compose; MIT license; opt-in OpenTelemetry export with filtered attributes.
+- SQLite migration tests, actual stdio process restart and authenticated HTTP socket tests,
+  repeated persistent demo, build and installed-wheel smoke. Locked Python 3.12 and 3.14
+  environments each passed 242 tests with one PostgreSQL integration test skipped in the
+  final local verification; measured Python 3.12 line coverage was 95.43%.
+- Actual local terminal recording at [docs/demo.cast](docs/demo.cast), plus a three-minute
+  narration script. The recording preserves real short execution timing; it is not a
+  narrated three-minute video.
+- Subsequent Linux validation executed a real Docker image build and behavioral smoke,
+  plus PostgreSQL 17.11 backend contracts. Earlier counts above predate this portfolio
+  finalization pass; see the latest resolution/release record.
+
+## Remaining validation and accepted limitations
+
+- Remote CI and an operational shared deployment require separate release-specific evidence.
+- No live Claude evaluation has been run. A run requires credentials, chosen model and an
+  approved budget; scored cost thresholds are not a provider spending cap.
+- Signing/HMAC or external evidence anchoring remains explicitly deferred. A database
+  administrator can rewrite both content and hashes.
+- Production deployment still needs TLS, secret distribution/rotation, separate database
+  provisioning, backup/restore validation and real-data retention/encryption decisions.
+- Phrase checks, PII detection and security classification are bounded heuristics. Scripted
+  controls establish behavior on declared cases, not general model safety or production quality.
+- A narrated video and publication are optional follow-up; nothing has been published.
+
+Current references: [README](README.md), [architecture](docs/architecture.md),
+[data contracts](docs/data_contracts.md), [threat model](docs/threat_model.md),
+[deployment](docs/deployment.md), [audit resolution](docs/audits/2026-09-27/RESOLUTION.md).
+
+---
+
+# Historical plan and prior audit notes (superseded)
+
+Everything below records the pre-0.2.0 plan or earlier implementation state. Old checked
+acceptance items and claims that findings were fixed describe that earlier review; consult
+the current status and resolution record above for present evidence and limitations.
+
 # 14. Agent Evaluation and Red-Team Platform
 
 > **Revision 2026-09-23 (b): audit remediation.** A three-part audit (correctness, security, requirements)

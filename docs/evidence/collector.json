@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "verified_at": "2026-09-27T22:47:21.432310+00:00",
+  "python": "3.14.5",
+  "exporter_platform": "Windows-11-10.0.26200-SP0",
+  "docker_context": "WSL Ubuntu-22.04",
+  "collector_release": "otel/opentelemetry-collector-contrib:0.161.0",
+  "collector_image_digest": "sha256:fd328de2552466ad78385e1b1289c3f2402b1c45f265b252aab1955b42845ac1",
+  "collector_image_id": "sha256:fd328de2552466ad78385e1b1289c3f2402b1c45f265b252aab1955b42845ac1",
+  "collector_configuration": "receivers:\n  otlp:\n    protocols:\n      http:\n        endpoint: 0.0.0.0:4318\nexporters:\n  debug:\n    verbosity: detailed\nservice:\n  telemetry:\n    logs:\n      encoding: json\n  pipelines:\n    traces:\n      receivers: [otlp]\n      exporters: [debug]\n",
+  "official_release_source": "https://github.com/open-telemetry/opentelemetry-collector-releases/releases/tag/v0.161.0",
+  "official_setup_source": "https://opentelemetry.io/docs/collector/install/docker/",
+  "synthetic_only": true,
+  "collector_host_binding": "127.0.0.1",
+  "collector_exit_code": 0,
+  "span_count": 3,
+  "hierarchy_verified": true,
+  "privacy_verified": true,
+  "sdk_atexit_delivery_verified": true,
+  "collector_debug_log_sha256": "35fe213d5f0b3ab3835f83bde19c06261d7db74f28ecb9a21ac3bf8a81436b85",
+  "spans": [
+    {
+      "name": "agent_case",
+      "trace_id": "9321cb147fe65af06ecd46e6ab4ef9f0",
+      "span_id": "5bff2abcc48b19e1",
+      "parent_span_id": "b38c249c2c759014",
+      "status_code": "Unset",
+      "status_message": "",
+      "attributes": {
+        "agent_id": "sha256:74b822069163f7fbba08350a124b2ccdd35294907cd689c625552d3b47515d8c",
+        "case_id": "sha256:4852c1bd54db3d04ea288728995c9c31a59a4496e273dbd031f263ff2803b693",
+        "tool_name": "crm.lookup",
+        "input_tokens": 17,
+        "output_tokens": 9,
+        "cost_usd": 0.0001,
+        "latency_ms": 0.001200009137392044
+      }
+    },
+    {
+      "name": "agent_case_error",
+      "trace_id": "9321cb147fe65af06ecd46e6ab4ef9f0",
+      "span_id": "35a380a3a98f08f9",
+      "parent_span_id": "b38c249c2c759014",
+      "status_code": "Error",
+      "status_message": "",
+      "attributes": {
+        "case_id": "sha256:50306d14d0f5e9c7d46730fcc1c188a75f26f35dfb4ba848a79c01e7aada390d",
+        "error.type": "RuntimeError",
+        "latency_ms": 0.016800127923488617
+      }
+    },
+    {
+      "name": "transport_verification",
+      "trace_id": "9321cb147fe65af06ecd46e6ab4ef9f0",
+      "span_id": "b38c249c2c759014",
+      "parent_span_id": "",
+      "status_code": "Unset",
+      "status_message": "",
+      "attributes": {
+        "run_id": "synthetic-run-1",
+        "case_count": 2,
+        "latency_ms": 0.17950008623301983
+      }
+    }
+  ],
+  "limitations": [
+    "Local official Collector with debug output only; no external telemetry destination",
+    "No TLS, remote authentication, persistent trace storage or UI verified",
+    "Token counts and cost are synthetic inputs; span latencies are measured"
+  ]
+}

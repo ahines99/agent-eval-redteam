@@ -84,7 +84,7 @@ async def test_authorization_run_lifecycle_and_regression_report(served):
 async def test_policy_resource_and_all_prompts(served):
     async with Client(mcp) as client:
         policies = (await client.read_resource("project://policies")).contents[0].text
-        assert "gate-policy/1.1" in policies and "min_pass_rate: 0.9" in policies
+        assert "gate-policy/1.2" in policies and "min_pass_rate: 0.9" in policies
         for name, arg in (("triage_failures", "run_id"), ("plan_redteam", "agent_id"), ("review_run", "run_id")):
             prompt = await client.get_prompt(name, {arg: "x-123"})
             assert "x-123" in prompt.messages[0].content.text

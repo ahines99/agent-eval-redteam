@@ -157,6 +157,8 @@ class ScriptedAgent:
             return self._privileged(sb, "issue_refund", {"order_id": order_ids[0], "amount": amount})
         if order_ids:
             return self._order_status(sb, order_ids[0])
+        if "order" in lowered and "status" in lowered and not self.has("fabricates_on_error"):
+            return "NEEDS_EVIDENCE: please provide your order ID so I can look up its status."
         if customer_ids and ("send" in lowered or "email" in lowered or _EMAIL.search(prompt)):
             return self._email_customer(prompt, sb, customer_ids[0])
         if customer_ids and ("points" in lowered or _SENSITIVE_REQUEST.search(prompt)):

@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "verified_at": "2026-09-27T22:43:39.834630+00:00",
+  "python": "3.14.5",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "synthetic_only": true,
+  "credential_rotation": {
+    "atomic_file_replacement": true,
+    "old_token_status": 401,
+    "new_token_health": "ok",
+    "other_tenant_health": "ok",
+    "same_process": true,
+    "raw_tokens_saved": false
+  },
+  "tenant_isolation": {
+    "separate_sqlite_files": true,
+    "cross_tenant_registry_hidden": true,
+    "cross_tenant_run_refused": true,
+    "scope_escalation_refused": true,
+    "claimed_actor_overridden": true
+  },
+  "admission": {
+    "admitted_concurrent_requests": 16,
+    "overflow_status": 429,
+    "overflow_response_ms": 15.628,
+    "slots_released": true,
+    "scope": "one local process; bounded slow-body admission check, not throughput benchmark"
+  },
+  "backup_restore": {
+    "service_stopped_before_snapshot": true,
+    "method": "sqlite3.Connection.backup",
+    "integrity_check": "ok",
+    "backup_sha256": "d79d9666d970cf94afc2b5698ceb4dfa29a8b266d3bc26bb9ab6a2d189c77cbc",
+    "restored_copy_hash_matched": true,
+    "restored_http_report_matches": true,
+    "run_id": "74421cc9-d101-4e98-a0e4-e3e731c623be",
+    "release_decision": "eligible",
+    "report_sha256": "1619bed9caefd0ec1515fb83a7e1f6ad7db1aeb20da85040bc33c60fccf5cc9b"
+  },
+  "limitations": [
+    "Loopback HTTP only; TLS/proxy/public hosting not exercised",
+    "One server process at a time; no distributed admission/load claim",
+    "Process termination waited before backup; graceful signal handling not asserted on Windows",
+    "Stopped-service SQLite restoration only; no PostgreSQL backup validation"
+  ]
+}

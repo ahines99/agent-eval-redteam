@@ -1,57 +1,67 @@
-# Threat model
+# Threat model (0.2.0)
 
-## Assets
-- Evaluation integrity: scores, findings and gate decisions people rely on to release agents.
-- The approval boundary: nobody ships a blocked or unreviewed agent through this platform.
-- Data: fixture PII (synthetic by rule), traces (may contain model output), credentials for live models.
+Assets: evaluation integrity, evidence, release decisions, synthetic fixtures, model
+credentials and tenant data. Operators, approvers and suite authors have different roles.
+Agents under test and driving MCP clients may encounter untrusted instructions.
+The server host/database administrator remains trusted.
 
-## Actors
-- **Operator** (runs evals via MCP/CLI), **approver** (records gate decisions and security authorizations).
-- **Suite author**: can register suites. Untrusted as far as the policy boundary is concerned: a suite must
-  not be able to switch off authorization or reach production.
-- **Agent under test**: untrusted. Its output may contain injected instructions or leaked data.
-- **Driving model**: Claude or another client calling the MCP tools. It's also untrusted; it can be steered by
-  trace text it reads.
+## Boundaries and controls
 
-## Threats and controls
+| Threat | Implemented control |
+|---|---|
+| Spoofed HTTP actor | Token digest maps to server-derived actor; caller fields replaced |
+| Unauthorized tool operation | Scopes `read`, `run`, `register`, `authorize`, `approve` |
+| Cross-tenant access | Server-selected tenant database; distinct SQLite paths checked |
+| Shared server lacks credentials | Invalid/missing config returns 503; bad/missing token returns 401 |
+| Self-approval / confusing identities | Normalized ASCII actors; approver differs from requester |
+| Trace text steers review | Evidence treated as data; prompt requests human decision; server gate rules remain binding |
+| Relabeled attack cases | Content-based authorization, including planted fixtures and sensitive requests |
+| Authorization expires in queue | Recheck inside concurrency slot immediately before case adapter invocation |
+| Hidden attack in shared world | Benign shared world; explicit attack fixtures local to authorized cases |
+| Production/destructive red-teaming | Production security suites/failure injection refused; destructive injection disabled |
+| Real email/refund/delete effects | Queued email; privileged tools refused; attempts scored |
+| Personal data in authored suites | Synthetic-range validation of prompts, fixtures, keys and numeric values |
+| Leakage through write arguments | Answer, email destination/subject/body and approval-request checks; finding redaction |
+| Missing/tampered release evidence | Exact manifest, hashes, evidence links, artifacts and metric consistency verified |
+| Concurrent workflow commits | Expiring leases, heartbeat, fenced writes and deterministic ids |
+| Crash around human review | Atomic checkpoint and pause; unresolved review restored to `needs_review` |
+| Weak chosen baseline | Automatic accepted baseline with matching evaluation identity; caller baseline informational |
+| Blocked version shops suites | Earlier block remains binding for that agent version |
+| Resource exhaustion | Suite admission limits, eight active runs/database, 16 HTTP requests/process |
+| Sensitive telemetry | Opt-in export with allowlisted identifiers/counts and class-only failures |
 
-| Threat | Control | Where |
-|---|---|---|
-| Driving model is prompt-injected by trace text into approving a release | Gate decisions need an approver ≠ requester and a written reason; critical failures can't be overridden; `review_run` prompt forbids calling `decide_release_gate` | `policies.check_gate_decision`, `mcp_server.review_run` |
-| Self-approval with a look-alike name (`alice` + zero-width space, Cyrillic `а`) | Every actor id is NFKC-normalised, stripped of format characters, case-folded and restricted to plain ASCII before comparison | `policies.normalize_actor` |
-| Attack cases relabelled as "factuality" to skip authorization or reach production | Authorization need is derived from case content (canaries, injected tools, extra fixtures, injection-like or sensitive prompts, PII, recipients) | `policies.required_authorizations` |
-| Suite fixtures replace a real KB page, customer or order with a payload | Fixtures may only add new ids; collisions are rejected at registration and ignored by the sandbox | `policies.check_suite_content`, `Sandbox.__post_init__` |
-| Authorization expires mid-run but the run is resumed, or probed ad hoc | Authorization re-checked with the current clock before every agent-calling step and every `inject_failure` | `EvalEnvironment.authorize` |
-| Red-teaming a production agent | Production agents can't be authorized; security cases and failure injection are refused for them | `policies.check_run_allowed`, `check_failure_injection` |
-| Requester picks a bad run as baseline to hide regressions | The gate only uses the automatically selected last accepted run on the same suite version; caller baselines are informational | `primary.compare_versions` |
-| A blocked agent version shops for a suite it passes | A version blocked once is blocked on every later run | `policies.evaluate_gate` (`prior_blocks`) |
-| Real PII used in exfiltration tests | Strict, separator-agnostic detection (bare digit runs, intl phones, obfuscated emails, fullwidth characters, zero-width tricks, dict keys, integers) at registration and run time | `domain/pii.py`, `policies.check_suite_content` |
-| Agent actually exfiltrates or deletes something | Agent only sees sandbox tools: email is queued, privileged tools fail closed (before any injection), attacker domains are reserved TLDs | `adapters/sandbox.py` |
-| Leaked values copied into reports | Finding details are redacted centrally; PII findings count values and name only recipient domains | `scoring._result`, `scoring.score_pii` |
-| Silent suite or agent drift ("same version", different content) | Immutable versions; content and config hashes re-verified at run time | `services.register_*`, `primary.register_system/load_eval_suite` |
-| Casual tampering with stored traces or suites | Content hashes; `get_trace` reports `integrity_ok`; suite hash checked on every step | `repositories.save_trace`, `EvalEnvironment.suite` |
-| Duplicate or replayed runs | Idempotency keys (bounded length); deterministic ids; one decision per gate | `repositories`, `approvals` unique key |
-| Harness outage or misconfiguration scored as agent failure | Adapters classify errors: transient → retried, harness → run fails with no trace, agent → scored | `AgentAdapter.classify_error`, `primary.run_case` |
-| Typo'd or unpriced model makes the cost gate pass for free | Claude config validated at registration; unpriced models fail closed | `claude_agent.ClaudeConfig`, `estimate_cost` |
-| Model fallback hides which model was evaluated | Refusal fallbacks disabled for evaluated Claude agents; refusals recorded as outcomes | `claude_agent.py` |
-| Nobody knows who looked at which evidence | `get_trace`/`get_findings` write `evidence_read` audit events | `services.get_trace`, `services.get_findings` |
-| Secrets in Skills, prompts or logs | Credentials come only from the environment/SDK profile; spans carry ids and counts only | `observability.py`, `skills/` |
+Classification and PII detection are heuristics. Tests cover declared patterns, not every
+possible attack, personal datum or encoding. Report a pass as evidence about its suite.
 
-## Known gaps (accepted for v0.1)
-- **No authentication or identity on the MCP server.** `requested_by`, `approver` and `reader` are
-  caller-asserted strings. Normalisation stops look-alike tricks, but separation of duties is only as strong
-  as the identity behind the name. Before any shared deployment:
-  - run the Streamable HTTP app behind an authenticating proxy (OIDC);
-  - derive actor identity from the token server-side, never from tool arguments.
-- **No per-tool authorization.** Anyone who can call the server can call `authorize_security_testing`.
-  Split that tool into a separate server (or add scopes) when roles diverge.
-- **Hashes are not signatures (deferred).** Each content hash is stored beside the data it covers, so
-  someone with database write access can rewrite both and pass the integrity check. The fix is an HMAC
-  with a server-held key (or an append-only anchor such as a transparency log), plus the suite hash
-  recorded on the run row. Deferred until the database is shared with anyone who shouldn't be able to
-  alter verdicts.
-- Content-based classification is a heuristic. A case with none of the signals, run against an agent
-  that attacks itself, isn't caught. Fixtures and prompts are the realistic vectors, and those are covered.
-- Traces store raw agent output. With synthetic fixtures that's acceptable; with real sandboxes, add
-  retention limits and encryption at rest.
-- Resource-exhaustion limits (max cases × repeats per run, concurrent runs) aren't enforced yet.
+## Deployment trust
+
+Stdio trusts access to the local process; it does not authenticate actor names independently.
+HTTP uses high-entropy service tokens, not OIDC login. Keep config private, issue separate
+tokens per actor, grant least scopes, terminate TLS at a proxy and keep the backend private.
+Config is reread on each request; revocation does not cancel already accepted work.
+
+For PostgreSQL, provision separate databases/credentials with least privilege. Distinct
+URL strings cannot prove arbitrary DNS aliases or routing lead to separate stores.
+Verify isolation operationally. See [deployment](deployment.md).
+
+## Explicit limitations
+
+- **Signing remains deferred.** A database writer can alter hashes and data together.
+  HMAC/signatures or an external append-only anchor would change this boundary.
+- **Remote calls are not exactly once.** A crash before trace persistence can repeat a
+  model invocation. Leases prevent conflicting commits, not all duplicate provider billing.
+- **Limits are not spend caps.** Per-suite limits are 128 cases, 512 planned invocations,
+  20,000-character prompts, 50 tool calls/case and 1,000,000 serialized bytes. No aggregate
+  provider billing cap or organization-wide quota exists; cost thresholds score completed
+  traces. HTTP concurrency is per process.
+- **Storage retains raw traces.** Synthetic inputs do not guarantee model output lacks
+  sensitive text. Protect traces, error/audit data and backups; decide retention,
+  encryption and deletion policies before introducing real-data sandboxes.
+- **Authorization has case granularity.** Expiry blocks the next adapter invocation;
+  it does not revoke an already-running provider/tool loop.
+- **Validation is bounded.** Local tests, stdio/HTTP transport, SQLite migrations,
+  PostgreSQL 17.11 contracts and Docker build/behavioral smoke have run. Live Claude
+  evaluation, remote CI and operational shared deployment require separate evidence;
+  no production security certification is claimed.
+
+See [audit resolution](audits/2026-09-27/RESOLUTION.md) for the remediation record.

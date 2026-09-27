@@ -11,7 +11,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 # Bumped whenever the persisted shape of traces, artifacts or findings changes.
-SCHEMA_VERSION = "1.1"
+SCHEMA_VERSION = "1.2"
 
 
 def canonical_hash(obj: Any) -> str:

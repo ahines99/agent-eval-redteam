@@ -1,97 +1,94 @@
 # Data contracts
 
-Pydantic models are the source of truth: `domain/models.py` (evidence, findings, audit, hashing, schema
-version) and `domain/project_models.py` (agents, suites, traces, scores). The tables below are defined in
-`adapters/repositories.py`.
+Pydantic models in `domain/models.py` and `domain/project_models.py` define runtime
+contracts. SQLAlchemy tables live in `adapters/repositories.py`; migrations are frozen
+in `migrations/versions/`. This describes application version 0.2.0.
 
-## Versions
+| Version | Current | Purpose |
+|---|---|---|
+| `SCHEMA_VERSION` | `1.2` | Trace/run summary and completion-event interpretation |
+| `SCORING_VERSION` | `scoring/1.2` | Scoring artifact and evaluation identity |
+| `GATE_POLICY_VERSION` | `gate-policy/1.2` | Gate decisions and evaluation identity |
+| Alembic revision | `0002` | Initial SQL schema plus execution leases |
 
-| Constant | Where | Current | Recorded in |
-|---|---|---|---|
-| `SCHEMA_VERSION` | `domain/models.py` | `1.1` | every trace; every `step_completed` audit event; `RunSummary` |
-| `SCORING_VERSION` | `domain/scoring.py` | `scoring/1.1` | the Score traces artifact |
-| `GATE_POLICY_VERSION` | `domain/policies.py` | `gate-policy/1.1` | every gate decision |
+Schema labels and migration revisions serve different purposes. Increment semantic
+versions when interpretation changes; create migrations when SQL schema changes.
 
-Bump the relevant constant whenever the meaning of a stored value changes, so old runs stay interpretable.
+## Persistence
 
-## Tables
+| Table | Key / behavior |
+|---|---|
+| `agents` | `agent_id=name@version`; immutable specification/config hash |
+| `eval_suites` | Suite id/version; immutable authored definition/hash |
+| `authorizations` | Authorization id; agent, categories, approver, reason and expiry |
+| `workflow_runs` | Run id; unique optional idempotency key, status, requester and suite |
+| `execution_leases` | Run id; owner and expiry, used to fence workflow writes |
+| `run_artifacts` | Run/step; hashed checkpoint payload |
+| `traces` | Deterministic release id, random ad-hoc id; JSON body/hash |
+| `evidence` | Evidence id; trace URI and matching hash |
+| `findings` | Run/case/phase/dimension id; severity and redacted statement |
+| `finding_evidence` | Finding/evidence/relation links |
+| `approvals` | Unique run/gate; decision, actor, reason, override flag |
+| `run_metrics` | Run id; scorecard/case outcomes checked against score artifact |
+| `audit_events` | Serial id; workflow, authorization, decision and evidence-read events |
 
-| Table | Key | Purpose | Mutability |
-|---|---|---|---|
-| `agents` | `agent_id` = `name@version`, unique (name, version) | registered agents under test with `config_hash` | immutable; changes need a new version |
-| `eval_suites` | (`suite_id`, `version`) | suite definition (as authored, defaults omitted) + `content_hash` | immutable |
-| `authorizations` | `authorization_id` | who authorized which security categories for which agent, until when | append-only |
-| `workflow_runs` | `run_id`, unique `idempotency_key` (≤200 chars) | status, current step, requester, explicit baseline, error | status fields only |
-| `run_artifacts` | (`run_id`, `step`) | each step's output + `content_hash` | upserted: a re-executed step replaces its own output |
-| `traces` | `trace_id` (UUIDv5; random for ad-hoc probes) | full agent trace (tool calls, output, tokens, cost) + `content_hash` | append-only |
-| `evidence` | `evidence_id` (UUIDv5 of trace) | `trace://` URI + hash for every trace | append-only |
-| `findings` | `finding_id` (UUIDv5 of run/case/phase/dimension) | one failure statement with severity (details redacted) | append-only |
-| `finding_evidence` | (finding, evidence, relation) | provenance links | append-only |
-| `approvals` | unique (`run_id`, `gate`) | human gate decision with reason | one per gate |
-| `run_metrics` | `run_id` | denormalised scorecard + per-case outcomes for comparison and monitoring | upserted by scoring |
-| `audit_events` | serial `event_id` | step lifecycle, pauses, decisions, authorizations, evidence reads | append-only |
+Checkpoints atomically write artifacts, completion events and pause state. Application
+operations preserve evidence/decisions; database administrators can still modify tables.
+Hashes are not signatures or external immutable anchors.
 
-Actor columns (`requested_by`, `approver`, `approved_by`, `owner`, `registered_by`, audit `actor`) hold
-normalised identifiers: NFKC, invisible characters removed, case-folded, and restricted to
-`[a-z0-9._@+-]`.
+Actor ids are NFKC-normalized, stripped of invisible format characters, case-folded and
+restricted to ASCII identifiers. HTTP replaces caller actor fields with its authenticated
+principal; stdio trusts its caller. Idempotency keys are 1–200 characters and cannot be
+reused with different run parameters.
 
-## Hashing
+## Suite expectations
 
-`canonical_hash(obj)` = `sha256:` + SHA-256 of JSON with sorted keys and compact separators. It's used for
-agent configs, traces (and so evidence) and step artifacts. Suites use `EvalSuite.content_hash()`, which
-hashes the suite **with defaults excluded**, so adding a defaulted field to the models never invalidates an
-already-registered suite. Never change an existing default value; add a new field instead. `get_trace`
-recomputes the trace hash and reports `integrity_ok`.
-
-Hashes are stored in the same row as the data they cover. They catch corruption and casual edits, not an
-attacker with database write access (see the threat model).
-
-## Eval suite format
-
-See `fixtures/suites/support-core.v1.1.0.json`. Per case:
+See `fixtures/suites/support-core.v1.2.0.json`. Published 1.0.0/1.1.0 JSON files remain
+unchanged; new assertions belong in a new version.
 
 | Field | Meaning |
 |---|---|
-| `category` | factuality, tool_use, permission, prompt_injection, pii, citation, calibration, reliability (descriptive; authorization is decided from content) |
-| `expected_policy` | human-readable statement of correct behaviour |
-| `fixtures.extra_docs` | documents added for this case only (e.g. poisoned, stale or contradictory pages); ids must be new |
-| `fixtures.extra_customers` / `extra_orders` | records added for this case only (e.g. duplicate names, missing fields); ids must be new |
-| `expect.must_include` / `must_not_include` | whole-phrase, case-insensitive checks (factuality; also fabrication under failure) |
-| `expect.expected_tools` | ordered subsequence of calls with subset-matched args |
-| `expect.forbidden_tools` | in addition to the always-forbidden privileged tools |
-| `expect.required_citations` | doc ids that must be cited as `[doc:ID]`; any cited id that wasn't retrieved is fabricated |
-| `expect.canary`, `injected_tool` | injection markers (canary matched ignoring case and punctuation) |
-| `expect.allowed_recipients` | legitimate `send_email` recipients; each may only receive their own data |
-| `expect.must_abstain` | evidence is insufficient; an abstain marker is required |
-| `budget` | latency, cost and tool-call limits (defaults at suite level) |
+| `category` | Reporting label; authorization additionally examines content |
+| `expected_policy` | Human-readable behavior; not an executable assertion |
+| `fixtures.extra_docs/customers/orders` | Case-local records with new ids |
+| `expect.must_include/must_not_include` | Whole-phrase output checks; calibration includes required clarification phrases |
+| `expect.expected_tools[].name/args` | Ordered call subsequence; argument subset match |
+| `expected_tools[].args_contains` | Required phrases in named arguments, such as email body |
+| `expected_tools[].result_contains` | Required phrases in serialized tool results |
+| `expected_tools[].require_success` | Successful non-null result with no recorded error |
+| `expect.forbidden_tools` | Additional forbidden attempts beyond refund/delete |
+| `expect.required_citations` | Required `[doc:ID]` references; cited ids must be retrieved |
+| `expect.canary/injected_tool` | Injection outcome signals |
+| `expect.allowed_recipients` | Allowed email destinations, each restricted to its own customer's data |
+| `expect.must_abstain` | Abstention marker plus all required clarification assertions |
+| `budget` | Scored latency/cost thresholds; enforced tool-call count |
 
-Suite-level fields:
+Repeats range from 1–10. Failure plans name a case, non-privileged tool and timeout,
+outage or malformed response. An untriggered probe fails recovery. Suite 1.2.0 requires
+explicit `NEEDS_EVIDENCE` abstention. Suite hashes exclude defaults; do not change old
+field defaults casually, because that can change behavior without changing authored content.
 
-- `repeats` (1–10)
-- `failure_plans`: case, tool (non-privileged sandbox tools only), and timeout, outage or malformed
-- `recovery_markers` and `abstain_markers`; 1.1.0 accepts only `NEEDS_EVIDENCE` as an abstention
+## Evidence and identity
 
-## Trace
+`canonical_hash` is SHA-256 over canonical JSON. Release traces record run/case/phase/repeat,
+agent/model, tool calls/results/errors, final output, stop reason, tokens, latency,
+estimated cost, failure plan and schema version. Evidence uses `trace://<trace_id>`.
+All expected traces must exist and match identities/hashes before release scoring.
+`get_trace` returns stored hash, evidence id and `integrity_ok` for inspection.
 
-`Trace` records:
+Loading/scoring artifacts record `evaluation_identity`: suite hash, world hash, scorer
+version and gate-policy version. Comparisons need matching identity for `comparable=true`.
+Historical results without matching identity are not current release baselines and are
+not automatically rescored.
 
-- `tool_calls[]`: name, arguments, result, error, `error_kind`, latency, and a harness-only `injected`
-  flag. `error_kind` is one of `invalid_arguments`, `unknown_tool`, `denied`, `not_found`, `timeout`,
-  `outage`, `malformed` or `budget_exceeded`.
-- `final_output`
-- `stop_reason`: `end_turn`, `refusal`, `max_tokens`, `max_turns`, `tool_budget_exceeded` or `agent_error`
-- token counts, latency and estimated cost
-- `agent_error`
-- the `injected_failure` plan
-- `schema_version`
+## Returned run and scorecard
 
-## Run summary
+`RunSummary` contains status, step/error, per-step hashes, scorecard, gate, release decision,
+gating `comparison`, informational `requested_comparison`, alerts and schema version.
+Release decisions are `eligible`, `awaiting_review`, `approved_with_override`, `rejected`,
+`blocked` or `pending`.
 
-`RunSummary` (returned by `run_eval_suite`, `get_run`, `resume_run`, `decide_release_gate`) contains:
-
-- status, current step, error, and per-step artifact hashes
-- the scorecard
-- the gate decision and `release_decision` (`eligible`, `awaiting_review`, `approved_with_override`,
-  `rejected`, `blocked`, `pending`)
-- `comparison` (gating) and `requested_comparison` (informational)
-- regression alerts and `schema_version`
+Pass rate counts complete cases and includes a Wilson 95% interval. Dimension rates count
+applicable trace checks. Repeatability measures consistent baseline pass/fail outcomes.
+Recovery is nullable when no probe applies. Reports include baseline p95 latency and
+aggregate estimated cost; neither is a production service guarantee.

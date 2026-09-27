@@ -148,7 +148,7 @@ def test_recovery_requires_acknowledgement_and_no_fabrication():
     fabricated = score_recovery(case, _trace(failed, "It shipped.", injected_failure=plan, phase="injected"), SUITE)
     assert fabricated.passed is False
     not_triggered = score_recovery(case, _trace([], "hi", injected_failure=plan, phase="injected"), SUITE)
-    assert not_triggered.applicable is False
+    assert not_triggered.applicable is True and not_triggered.passed is False
 
 
 # ------------------------------------------------------------------ sandbox

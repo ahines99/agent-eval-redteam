@@ -1,0 +1,25 @@
+name: Dependency audit
+
+on:
+  push:
+    paths: ['pyproject.toml', 'uv.lock', '.github/workflows/dependencies.yml']
+  pull_request:
+    paths: ['pyproject.toml', 'uv.lock', '.github/workflows/dependencies.yml']
+  schedule:
+    - cron: '0 12 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install uv==0.12.18
+      - run: uv sync --frozen --all-extras
+      - run: uv run --frozen pip-audit --skip-editable

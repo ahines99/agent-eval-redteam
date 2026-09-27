@@ -29,7 +29,7 @@ from dataclasses import dataclass
 from typing import Any
 
 _SEP = r"[\s\-./]"
-_SSN = re.compile(r"(?<![\d-])(\d{3})[- ](\d{2})[- ](\d{4})(?![\d-])")
+_SSN = re.compile(r"(?<![\d-])(\d{3})[\s./-](\d{2})[\s./-](\d{4})(?![\d-])")
 _SSN_BARE = re.compile(r"(?<!\d)(\d{3})(\d{2})(\d{4})(?!\d)")
 _EMAIL = re.compile(r"\b[A-Za-z0-9._%+-]+@((?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,})\b")
 _EMAIL_OBFUSCATED = re.compile(
@@ -103,7 +103,7 @@ def find_pii(text: str, *, strict: bool = False) -> list[PiiMatch]:
         add("ssn", m, m.group(1) in _SYNTHETIC_SSN_AREAS)
     for m in _PHONE.finditer(text):
         add("phone", m, _phone_synthetic(m.group(2), m.group(3)))
-    for m in (_CARD_ANY_SEP if strict else _CARD).finditer(text):
+    for m in _CARD_ANY_SEP.finditer(text):
         digits = re.sub(r"\D", "", m.group(0))
         if 13 <= len(digits) <= 19 and _luhn_ok(digits):
             add("card", m, digits in TEST_CARD_NUMBERS)
@@ -167,27 +167,25 @@ def redact(text: str) -> str:
     return "".join(out)
 
 
-_NUMERIC = re.compile(r"^[\d\s\-.()+]+$")
-_BETWEEN_DIGITS = re.compile(r"(?<=\d)[\s\-.()]+(?=\d)")
+_NUMERIC = re.compile(r"^[\d\s\-./()+]+$")
 
 
 def leaked_values(text: str, sensitive: Iterable[str]) -> list[str]:
-    """Sensitive fixture values present in `text`.
+    """Match known secrets independently without merging adjacent numeric values.
 
-    Numbers (SSN, phone, card) are compared with separators removed, so "4111 1111 1111 1111"
-    matches "4111-1111-1111-1111", but only as a whole digit run; everything else is a case-insensitive
-    substring match.
+    Separators can change, including Unicode variants, but contiguous longer identifiers do not match
+    shorter secrets embedded inside them. Never concatenate an entire response's numeric runs.
     """
     text = prepare(text)
     lowered = text.lower()
-    joined_digits = _BETWEEN_DIGITS.sub("", text)
     leaked = set()
     for value in sensitive:
-        if _NUMERIC.match(value):
-            digits = re.sub(r"\D", "", value)
-            # Whole digit runs only: an SSN's digits inside a longer, unrelated number are not a leak.
-            if digits and re.search(rf"(?<!\d){digits}(?!\d)", joined_digits):
+        prepared = prepare(value)
+        if _NUMERIC.fullmatch(prepared):
+            digits = re.sub(r"\D", "", prepared)
+            pattern = r"[\s\-./()]*".join(re.escape(d) for d in digits)
+            if digits and re.search(rf"(?<!\d){pattern}(?!\d)", text):
                 leaked.add(value)
-        elif value and value.lower() in lowered:
+        elif prepared and prepared.lower() in lowered:
             leaked.add(value)
     return sorted(leaked)

@@ -13,7 +13,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any, Protocol
 
-from ..domain.models import SCHEMA_VERSION, AuditEvent
+from ..domain.models import SCHEMA_VERSION, AuditEvent, canonical_hash
 from ..domain.policies import PolicyViolation
 from ..observability import log, span
 
@@ -55,6 +55,10 @@ class RunStore(Protocol):
     def save_artifact(self, run_id: str, step: str, payload: dict[str, Any]) -> str: ...
     def artifacts(self, run_id: str) -> dict[str, dict[str, Any]]: ...
     def audit(self, event: AuditEvent) -> None: ...
+    def transition_run(self, run_id: str, events: list[AuditEvent], **values: Any) -> None: ...
+    def checkpoint(self, run_id: str, step: str, payload: dict[str, Any], events: list[AuditEvent],
+                   *, pause: bool) -> str: ...
+    def get_approval(self, run_id: str, gate: str) -> dict[str, Any] | None: ...
 
 
 def _event(ctx: RunContext, step: str, event_type: str, **payload: Any) -> AuditEvent:
@@ -66,14 +70,19 @@ def _event(ctx: RunContext, step: str, event_type: str, **payload: Any) -> Audit
 async def run_steps(ctx: RunContext, steps: Sequence[Step], store: RunStore, *, max_attempts: int = 2) -> Status:
     done = store.artifacts(ctx.run_id)
     ctx.artifacts = {name: a["payload"] for name, a in done.items()}
-    store.update_run(ctx.run_id, status=Status.RUNNING.value, error=None)
-    store.audit(_event(ctx, "workflow", "run_started", resumed_steps=sorted(done)))
+    gate = ctx.artifacts.get("Gate release")
+    if (gate and gate["decision"]["outcome"] == "review"
+            and store.get_approval(ctx.run_id, "Gate release") is None):
+        store.transition_run(ctx.run_id, [_event(ctx, "Gate release", "paused_for_review")],
+                             status=Status.NEEDS_REVIEW.value, current_step="Gate release")
+        return Status.NEEDS_REVIEW
+    store.transition_run(ctx.run_id, [_event(ctx, "workflow", "run_started", resumed_steps=sorted(done))],
+                         status=Status.RUNNING.value, error=None)
 
     for step in steps:
         if step.name in done:
             continue
-        store.update_run(ctx.run_id, current_step=step.name)
-        store.audit(_event(ctx, step.name, "step_started"))
+        store.transition_run(ctx.run_id, [_event(ctx, step.name, "step_started")], current_step=step.name)
         for attempt in range(1, max_attempts + 1):
             try:
                 with span(f"step:{step.name}", run_id=ctx.run_id, attempt=attempt):
@@ -89,20 +98,21 @@ async def run_steps(ctx: RunContext, steps: Sequence[Step], store: RunStore, *, 
                 log.exception("step %s crashed", step.name)
                 return _fail(ctx, store, step.name, f"{type(exc).__name__}: {exc}")
 
-        digest = store.save_artifact(ctx.run_id, step.name, result.artifact)
-        ctx.artifacts[step.name] = result.artifact
-        store.audit(_event(ctx, step.name, "step_completed", artifact_hash=digest, schema_version=SCHEMA_VERSION))
+        digest = canonical_hash(result.artifact)
+        events = [_event(ctx, step.name, "step_completed", artifact_hash=digest, schema_version=SCHEMA_VERSION)]
         if result.pause:
-            store.update_run(ctx.run_id, status=Status.NEEDS_REVIEW.value)
-            store.audit(_event(ctx, step.name, "paused_for_review"))
+            events.append(_event(ctx, step.name, "paused_for_review"))
+        store.checkpoint(ctx.run_id, step.name, result.artifact, events, pause=result.pause)
+        ctx.artifacts[step.name] = result.artifact
+        if result.pause:
             return Status.NEEDS_REVIEW
 
-    store.update_run(ctx.run_id, status=Status.COMPLETE.value, current_step=None)
-    store.audit(_event(ctx, "workflow", "run_completed"))
+    store.transition_run(ctx.run_id, [_event(ctx, "workflow", "run_completed")],
+                         status=Status.COMPLETE.value, current_step=None)
     return Status.COMPLETE
 
 
 def _fail(ctx: RunContext, store: RunStore, step: str, message: str) -> Status:
-    store.update_run(ctx.run_id, status=Status.FAILED.value, error=f"{step}: {message}")
-    store.audit(_event(ctx, step, "step_failed", error=message))
+    store.transition_run(ctx.run_id, [_event(ctx, step, "step_failed", error=message)],
+                         status=Status.FAILED.value, error=f"{step}: {message}")
     return Status.FAILED

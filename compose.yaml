@@ -1,0 +1,17 @@
+services:
+  eval:
+    build: .
+    stdin_open: true
+    environment:
+      DATABASE_URL: sqlite:////app/data/agent_eval.db
+    volumes:
+      - eval-data:/app/data
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    # Use `docker compose run --rm eval demo` for the offline demo.
+    # No ports are published. Stdio can be attached by an MCP client.
+
+volumes:
+  eval-data:

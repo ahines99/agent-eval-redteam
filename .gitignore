@@ -7,7 +7,10 @@ __pycache__/
 data/
 *.db
 .env
+.env.*
+!.env.example
 dist/
 build/
 .coverage
 htmlcov/
+coverage.xml

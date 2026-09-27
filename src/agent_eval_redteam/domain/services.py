@@ -12,11 +12,12 @@ from importlib import resources
 from typing import Any
 
 from pydantic import BaseModel
+from sqlalchemy.exc import IntegrityError
 
 from ..adapters.agents import AgentAdapter, build_adapter
 from ..adapters.repositories import Repository, canonical_hash, stable_id
 from ..adapters.sandbox import Sandbox, world_ids
-from ..workflows.base import Status
+from ..workflows.base import RunContext, Status
 from ..workflows.primary import (
     GATE_STEP,
     PROJECT_STEPS,
@@ -24,6 +25,7 @@ from ..workflows.primary import (
     release_decision,
     run_case,
     run_primary,
+    validate_release_traces,
 )
 from .models import SCHEMA_VERSION, AuditEvent, Finding
 from .policies import (
@@ -105,7 +107,13 @@ class EvalPlatform:
             return existing
         rec = AgentRecord(**spec.model_dump(), agent_id=agent_id, config_hash=config_hash,
                           registered_at=self.env.clock())
-        self.repo.insert_agent(rec)
+        try:
+            self.repo.insert_agent(rec)
+        except IntegrityError:
+            # A competing bootstrap/registration may have won the immutable unique key.
+            if self.repo.get_agent(agent_id) is None:
+                raise
+            return self.register_agent(spec)
         self._audit(None, "agent-registry", "agent_registered", spec.owner, agent_id=agent_id,
                     config_hash=config_hash, environment=spec.environment.value)
         return rec
@@ -115,6 +123,7 @@ class EvalPlatform:
 
     def register_suite(self, suite: EvalSuite, registered_by: str) -> dict[str, Any]:
         registered_by = normalize_actor(registered_by, "registered_by")
+        validate_suite_limits(suite)
         check_suite_content(suite, reserved_ids=world_ids())
         digest = suite.content_hash()
         existing = self.repo.get_suite(suite.suite_id, suite.version)
@@ -123,7 +132,12 @@ class EvalPlatform:
                 raise PolicyViolation(f"{suite.suite_id}@{suite.version} already exists with different content; "
                                       "eval suites are immutable per version, publish a new version")
             return {"suite_id": suite.suite_id, "version": suite.version, "content_hash": digest, "created": False}
-        self.repo.insert_suite(suite, digest, registered_by)
+        try:
+            self.repo.insert_suite(suite, digest, registered_by)
+        except IntegrityError:
+            if self.repo.get_suite(suite.suite_id, suite.version) is None:
+                raise
+            return self.register_suite(suite, registered_by)
         self._audit(None, "eval-suites", "suite_registered", registered_by, suite=f"{suite.suite_id}@{suite.version}",
                     content_hash=digest)
         return {"suite_id": suite.suite_id, "version": suite.version, "content_hash": digest, "created": True}
@@ -163,14 +177,15 @@ class EvalPlatform:
         if idempotency_key:
             prior = self.repo.run_by_idempotency_key(idempotency_key)
             if prior:
-                same = (prior["agent_id"], prior["suite_id"], prior["suite_version"]) == (
-                    agent_id, suite_id, suite_version)
+                same = (prior["agent_id"], prior["suite_id"], prior["suite_version"],
+                        prior["requested_by"], prior["baseline_run_id"]) == (
+                    agent_id, suite_id, suite_version, requested_by, baseline_run_id)
                 if not same:
                     raise PolicyViolation("idempotency key was already used for a different run request")
                 return self.get_run(prior["run_id"])
         # Validate before creating anything, so a refused request leaves no half-created run.
         self.env.agent(agent_id)
-        self.env.suite(suite_id, suite_version)
+        validate_suite_limits(self.env.suite(suite_id, suite_version))
         if baseline_run_id and self.repo.get_run(baseline_run_id) is None:
             raise LookupError(f"baseline run {baseline_run_id} not found")
         if baseline_run_id and self.repo.get_run_metrics(baseline_run_id) is None:
@@ -184,6 +199,10 @@ class EvalPlatform:
                                     idempotency_key=idempotency_key, baseline_run_id=baseline_run_id):
             prior = self.repo.run_by_idempotency_key(idempotency_key or "")
             assert prior is not None
+            if (prior["agent_id"], prior["suite_id"], prior["suite_version"],
+                    prior["requested_by"], prior["baseline_run_id"]) != (
+                    agent_id, suite_id, suite_version, requested_by, baseline_run_id):
+                raise PolicyViolation("idempotency key was already used for a different run request")
             return self.get_run(prior["run_id"])
         self._audit(run_id, "workflow", "run_requested", requested_by, agent_id=agent_id,
                     suite=f"{suite_id}@{suite_version}")
@@ -192,7 +211,9 @@ class EvalPlatform:
 
     async def resume_run(self, run_id: str, *, actor: str, overrides: dict[str, Any] | None = None) -> RunSummary:
         actor = normalize_actor(actor)
+        self.repo.recover_review_state(run_id)
         run = self._run(run_id)
+        validate_suite_limits(self.env.suite(run["suite_id"], run["suite_version"]))
         if run["status"] == Status.COMPLETE:
             return self.get_run(run_id)
         if run["status"] == Status.NEEDS_REVIEW and self.repo.get_approval(run_id, GATE_STEP) is None:
@@ -204,19 +225,21 @@ class EvalPlatform:
 
     async def decide_gate(self, *, run_id: str, approver: str, decision: str, reason: str) -> RunSummary:
         approver = normalize_actor(approver, "approver")
+        self.repo.recover_review_state(run_id)
         run = self._run(run_id)
         gate = self._gate(run_id)
         if gate is None:
             raise PolicyViolation(f"run is {run['status']} and has not reached the release gate")
+        validate_release_traces(RunContext(run_id=run_id, run=run, actor=approver), self.env)
         check_gate_decision(gate, requested_by=run["requested_by"], approver=approver, decision=decision,
                             reason=reason)
         if run["status"] != Status.NEEDS_REVIEW:
             raise PolicyViolation(f"run is {run['status']}; only runs waiting at the gate take a decision")
+        event = AuditEvent(run_id=run_id, step=GATE_STEP, event_type=f"gate_{decision}d", actor=approver,
+                           created_at=self.env.clock(), payload={"reason": reason, "gate_reasons": gate.reasons})
         if not self.repo.insert_approval(run_id=run_id, gate=GATE_STEP, decision=decision, approver=approver,
-                                         reason=reason, override=decision == "approve"):
+                                         reason=reason, override=decision == "approve", audit_event=event):
             raise PolicyViolation("a gate decision has already been recorded for this run")
-        self._audit(run_id, GATE_STEP, f"gate_{decision}d", approver, reason=reason,
-                    gate_reasons=gate.reasons)
         return await self.resume_run(run_id, actor=approver)
 
     # ------------------------------------------------------------ reads
@@ -235,6 +258,8 @@ class EvalPlatform:
         run = self._run(run_id)
         arts = self.repo.artifacts(run_id)
         score = arts.get("Score traces", {}).get("payload")
+        if score is not None:
+            validate_release_traces(RunContext(run_id=run_id, run=run, actor=run["requested_by"]), self.env)
         gate = arts.get(GATE_STEP, {}).get("payload")
         comparison = arts.get("Compare versions/models", {}).get("payload")
         monitor = arts.get("Monitor regressions", {}).get("payload")
@@ -285,14 +310,20 @@ class EvalPlatform:
     def regression_report(self, agent_name: str, suite_id: str, suite_version: str | None = None) -> dict[str, Any]:
         """History per suite version (pass rates on different case sets aren't comparable)."""
         history = self.repo.metrics_history(agent_name, suite_id, suite_version, limit=50)
-        by_version: dict[str, list[dict[str, Any]]] = {}
+        by_version: dict[tuple[str, str], list[dict[str, Any]]] = {}
         for h in history:
-            by_version.setdefault(h["suite_version"], []).append({
+            self.repo.validate_run_metrics(h["run_id"])
+            scoring = self.repo.artifacts(h["run_id"]).get("Score traces", {}).get("payload", {})
+            identity = scoring.get("evaluation_identity")
+            identity_key = canonical_hash(identity) if identity else "legacy"
+            by_version.setdefault((h["suite_version"], identity_key), []).append({
                 "run_id": h["run_id"], "agent_id": h["agent_id"], "suite_version": h["suite_version"],
                 "pass_rate": h["pass_rate"], "failing_cases": h["scorecard"]["failing_cases"],
+                "evaluation_identity": identity,
                 "created_at": h["run_created_at"].isoformat()})
         runs = [r for rows in by_version.values() for r in rows]
-        alerts = [f"{version}: {a}" for version, rows in sorted(by_version.items()) for a in regression_alerts(rows)]
+        alerts = [f"{version}: {a}" for (version, _), rows in sorted(by_version.items())
+                  for a in regression_alerts(rows)]
         return {"agent_name": agent_name, "suite_id": suite_id, "suite_version": suite_version, "runs": runs,
                 "alerts": alerts}
 
@@ -365,6 +396,18 @@ class EvalPlatform:
 
 
 # ------------------------------------------------------------ bootstrap
+
+
+def validate_suite_limits(suite: EvalSuite) -> None:
+    """Bound total work before registration; per-case limits alone cannot bound a suite."""
+    if len(suite.cases) > 128:
+        raise PolicyViolation("suite exceeds the limit of 128 cases")
+    if len(suite.cases) * suite.repeats + len(suite.failure_plans) > 512:
+        raise PolicyViolation("suite exceeds the limit of 512 agent invocations")
+    if len(suite.model_dump_json().encode("utf-8")) > 1_000_000:
+        raise PolicyViolation("suite exceeds the 1 MB content limit")
+    if any(len(case.prompt) > 20_000 or suite.budget_for(case).max_tool_calls > 50 for case in suite.cases):
+        raise PolicyViolation("cases are limited to 20,000 prompt characters and 50 tool calls")
 
 
 def bundled_suites() -> list[EvalSuite]:

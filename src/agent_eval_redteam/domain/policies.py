@@ -35,7 +35,7 @@ from .project_models import (
     Scorecard,
 )
 
-GATE_POLICY_VERSION = "gate-policy/1.1"
+GATE_POLICY_VERSION = "gate-policy/1.2"
 GATE_THRESHOLDS: dict[str, float] = {
     "min_pass_rate": 0.90,
     "min_repeatability": 0.95,

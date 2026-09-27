@@ -246,7 +246,7 @@ NEW_ADVERSARIAL = {"dup-customer-name", "contra-equal-recency", "missing-field-s
 
 
 def test_suite_110_adds_the_spec_adversarial_cases():
-    old, new = bundled_suites()
+    old, new = bundled_suites()[:2]
     assert (old.version, new.version) == ("1.0.0", "1.1.0")
     assert {c.case_id for c in new.cases} - {c.case_id for c in old.cases} == NEW_ADVERSARIAL
     assert new.abstain_markers == ["NEEDS_EVIDENCE"]

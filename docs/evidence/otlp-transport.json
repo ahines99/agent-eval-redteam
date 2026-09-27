@@ -1,0 +1,134 @@
+{
+  "schema_version": 1,
+  "verified_at": "2026-09-27T22:37:07.774507+00:00",
+  "python": "3.14.5",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "scope": "Real SDK exporter and local independent protobuf receiver; no official collector deployment.",
+  "synthetic_only": true,
+  "runs": [
+    {
+      "shutdown_mode": "explicit",
+      "transport": "OTLP HTTP/protobuf over localhost TCP",
+      "request_count": 1,
+      "received_bytes": 1005,
+      "span_count": 3,
+      "synthetic_header_verified": true,
+      "hierarchy_verified": true,
+      "privacy_verified": true,
+      "shutdown_delivery_verified": true,
+      "spans": [
+        {
+          "name": "agent_case",
+          "trace_id": "9bea4ff46c210f30b62c005371508912",
+          "span_id": "84837ac65a2668d6",
+          "parent_span_id": "7ffc0b9748ecf33d",
+          "attributes": {
+            "agent_id": "sha256:74b822069163f7fbba08350a124b2ccdd35294907cd689c625552d3b47515d8c",
+            "case_id": "sha256:4852c1bd54db3d04ea288728995c9c31a59a4496e273dbd031f263ff2803b693",
+            "tool_name": "crm.lookup",
+            "input_tokens": 17,
+            "output_tokens": 9,
+            "cost_usd": 0.0001,
+            "latency_ms": 0.0010998919606208801
+          },
+          "status_code": 0,
+          "status_message": "",
+          "event_count": 0,
+          "duration_ms": 0.0623
+        },
+        {
+          "name": "agent_case_error",
+          "trace_id": "9bea4ff46c210f30b62c005371508912",
+          "span_id": "2b92ecf3fc4d1c0e",
+          "parent_span_id": "7ffc0b9748ecf33d",
+          "attributes": {
+            "case_id": "sha256:50306d14d0f5e9c7d46730fcc1c188a75f26f35dfb4ba848a79c01e7aada390d",
+            "error.type": "RuntimeError",
+            "latency_ms": 0.015400117263197899
+          },
+          "status_code": 2,
+          "status_message": "",
+          "event_count": 0,
+          "duration_ms": 0.0264
+        },
+        {
+          "name": "transport_verification",
+          "trace_id": "9bea4ff46c210f30b62c005371508912",
+          "span_id": "7ffc0b9748ecf33d",
+          "parent_span_id": "",
+          "attributes": {
+            "run_id": "synthetic-run-1",
+            "case_count": 2,
+            "latency_ms": 0.16249995678663254
+          },
+          "status_code": 0,
+          "status_message": "",
+          "event_count": 0,
+          "duration_ms": 0.1981
+        }
+      ]
+    },
+    {
+      "shutdown_mode": "atexit",
+      "transport": "OTLP HTTP/protobuf over localhost TCP",
+      "request_count": 1,
+      "received_bytes": 1005,
+      "span_count": 3,
+      "synthetic_header_verified": true,
+      "hierarchy_verified": true,
+      "privacy_verified": true,
+      "shutdown_delivery_verified": true,
+      "spans": [
+        {
+          "name": "agent_case",
+          "trace_id": "19cba8ca094d0c3fed7c954f5b64e66b",
+          "span_id": "2b10108a2a92e4eb",
+          "parent_span_id": "376e19720d98ada9",
+          "attributes": {
+            "agent_id": "sha256:74b822069163f7fbba08350a124b2ccdd35294907cd689c625552d3b47515d8c",
+            "case_id": "sha256:4852c1bd54db3d04ea288728995c9c31a59a4496e273dbd031f263ff2803b693",
+            "tool_name": "crm.lookup",
+            "input_tokens": 17,
+            "output_tokens": 9,
+            "cost_usd": 0.0001,
+            "latency_ms": 0.00090012326836586
+          },
+          "status_code": 0,
+          "status_message": "",
+          "event_count": 0,
+          "duration_ms": 0.0659
+        },
+        {
+          "name": "agent_case_error",
+          "trace_id": "19cba8ca094d0c3fed7c954f5b64e66b",
+          "span_id": "1cd2a0eccb4c66c6",
+          "parent_span_id": "376e19720d98ada9",
+          "attributes": {
+            "case_id": "sha256:50306d14d0f5e9c7d46730fcc1c188a75f26f35dfb4ba848a79c01e7aada390d",
+            "error.type": "RuntimeError",
+            "latency_ms": 0.017999904230237007
+          },
+          "status_code": 2,
+          "status_message": "",
+          "event_count": 0,
+          "duration_ms": 0.0314
+        },
+        {
+          "name": "transport_verification",
+          "trace_id": "19cba8ca094d0c3fed7c954f5b64e66b",
+          "span_id": "376e19720d98ada9",
+          "parent_span_id": "",
+          "attributes": {
+            "run_id": "synthetic-run-1",
+            "case_count": 2,
+            "latency_ms": 0.18179998733103275
+          },
+          "status_code": 0,
+          "status_message": "",
+          "event_count": 0,
+          "duration_ms": 0.2191
+        }
+      ]
+    }
+  ]
+}

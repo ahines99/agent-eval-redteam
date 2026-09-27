@@ -124,6 +124,10 @@ class Doc(BaseModel):
 class ExpectedToolCall(BaseModel):
     name: str
     args: dict[str, Any] = Field(default_factory=dict, description="Subset of arguments that must match.")
+    args_contains: dict[str, list[str]] = Field(default_factory=dict,
+                                              description="Required whole phrases in each named argument.")
+    result_contains: list[str] = Field(default_factory=list, description="Required phrases in the JSON result.")
+    require_success: bool = False
 
 
 class Expectations(BaseModel):
