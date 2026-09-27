@@ -120,7 +120,10 @@ The four [skills](skills/) provide evaluation, security, tool-use and reliabilit
 
 `scripted` agents are deterministic controls. The `claude` adapter implements a live
 tool-use loop, validates model/pricing configuration and classifies provider failures;
-its API behavior has been tested with fake clients, not a paid live evaluation.
+its API behavior is covered by fake clients and a real Sonnet 5 validation run.
+The first live run passed 1/10 cases under the existing strict rules and paused for review;
+it recorded no critical security findings and about $0.104 in estimated token cost.
+[Read the result and measurement limits](docs/live-validation.md#first-live-result).
 Install the `claude` extra and configure Anthropic credentials only for an authorized,
 budgeted live run. Cost thresholds score completed traces; they are **not a hard spend cap**.
 
@@ -168,3 +171,5 @@ backup, retention and encryption decisions.
 
 Details: [architecture](docs/architecture.md), [data contracts](docs/data_contracts.md),
 [threat model](docs/threat_model.md), [deployment](docs/deployment.md).
+
+Current [verification and completion status](docs/VERIFICATION.md), [CI runs](https://github.com/ahines99/agent-eval-redteam/actions/workflows/ci.yml) and [releases](https://github.com/ahines99/agent-eval-redteam/releases).

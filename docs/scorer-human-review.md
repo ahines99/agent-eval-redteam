@@ -48,4 +48,4 @@ All customer identifiers, contact details and SSNs in this corpus are synthetic.
 
 After review, preserve this original corpus and report. Record reviewed labels, reviewer/date and reasons for changes in a new corpus revision; freeze its hash before rerunning. Approving this development-exposed set improves label credibility but does not make it a blind held-out benchmark.
 
-Original corpus SHA-256: `b81d019c03077bac30d7fc32f124b763bccb188da5f73970797fce6187503525`.
+Original corpus SHA-256: `d2269fab1350293bf602a132c79ab23e9bba61565544944404d54920dd2ae423`.

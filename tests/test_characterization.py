@@ -33,7 +33,7 @@ def test_saved_evidence_matches_current_scorer_and_frozen_corpus():
     actual = characterization.characterize()
     saved = json.loads((ROOT / "docs/evidence/scorer-characterization.json").read_text(encoding="utf-8"))
     assert actual == saved, "Regenerate evidence and review documentation after intentional scorer/corpus changes"
-    assert actual["corpus_sha256"] == "b81d019c03077bac30d7fc32f124b763bccb188da5f73970797fce6187503525"
+    assert actual["corpus_sha256"] == "d2269fab1350293bf602a132c79ab23e9bba61565544944404d54920dd2ae423"
     assert actual["review_status"] == "pending_human_review"
     assert all(row["label_review"]["reviewer"] is None for row in actual["results"])
     assert set(actual["by_dimension"]) == {dimension.value for dimension in characterization.Dimension}
@@ -46,6 +46,14 @@ def test_disagreements_are_retained_with_their_evidence():
                         for dimension, judgment in row["judgments"].items() if not judgment["agreement"]}
     assert sum(item["labeled"] for item in report["by_dimension"].values()) == report["judgment_count"]
     assert all(row["evidence"] for row in report["results"])
+
+
+def test_corpus_fingerprint_is_stable_across_checkout_newlines(tmp_path):
+    original = characterization.DEFAULT_CORPUS.read_bytes().replace(b"\r\n", b"\n")
+    unix, windows = tmp_path / "unix.json", tmp_path / "windows.json"
+    unix.write_bytes(original)
+    windows.write_bytes(original.replace(b"\n", b"\r\n"))
+    assert characterization.characterize(unix) == characterization.characterize(windows)
 
 
 @pytest.mark.parametrize("mutation", ["bad-label", "bad-dimension", "bad-id", "bad-schema"])

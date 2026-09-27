@@ -35,10 +35,10 @@ The public website is a static demonstration; it does not accept credentials or 
 |---|---|
 | F01 PostgreSQL demo keys | Repaired; shared demo assertions run on SQLite and PostgreSQL |
 | F02 behavioral delivery smoke | `scripts/verify_demo.py` and `scripts/smoke_installed.py`; installed container passed |
-| F03 execution of delivery environments | Local Docker, Compose and PostgreSQL passed; remote CI results linked below when available |
-| F04 release snapshot/publication | Repository configured; release commit, tag and artifacts are prepared after final CI |
+| F03 execution of delivery environments | Local Docker, Compose and PostgreSQL passed; remote PostgreSQL/container jobs passed; final matrix tracked in [CI](https://github.com/ahines99/agent-eval-redteam/actions/workflows/ci.yml) |
+| F04 release snapshot/publication | Repository published on main; release tag and artifacts follow successful final CI |
 | F05 reviewer onboarding | README, `docs/mcp-quickstart.md`, executable `scripts/mcp_walkthrough.py`; actual subprocess validated |
-| F06 accessible demo | `docs/demo.html`, original recording and static preview; Pages deployment configured |
+| F06 accessible demo | `docs/demo.html`, original recording and static preview; Pages deployment passed; public page returns the exact committed demo bytes |
 | F07 case study | `docs/case-study.md`, including AI assistance and bounded results |
 | F08 durable evidence | `docs/evidence/`, CI test/artifact uploads, `scripts/release_evidence.py` |
 | F09 claim accuracy | Current docs distinguish implemented, locally verified and externally executed capabilities |
@@ -46,15 +46,15 @@ The public website is a static demonstration; it does not accept credentials or 
 | F11 compatibility | Linux/Windows local evidence; remote matrix configured for Linux 3.12/3.13/3.14 and Windows 3.12 |
 | F12 scorer characterization | 33 traces / 35 proposed labels; nine disagreements retained; **independent human review pending** |
 | F13 PostgreSQL concurrency | Eight actual PostgreSQL tests passed; contracts cover separate connections and competing actors |
-| F14 live model validation | Budgeted Sonnet 5 runner and mock tests complete; **no paid run yet, awaiting API key** |
+| F14 live model validation | Real Sonnet 5 run complete: 21 requests, $0.10417 estimated token cost, 1/10 pass, review gate; preserved first result |
 | F15 shared operations | Local HTTP operations verified; no publicly hosted evaluation service or TLS deployment claimed |
 | F16 telemetry | Real official Collector transport verified; no external trace storage/UI claim |
 
 ## Remaining external input
 
 The user selected `ahines99/agent-eval-redteam` and a maximum $20 Anthropic budget.
-The prepared live experiment defaults to a more conservative $5 reservation ceiling and
-requires explicit execution. No Anthropic key is committed or included in the demo.
+The first live experiment used a conservative $5 reservation ceiling, reserved $1.411024
+and recorded $0.10417 in estimated token usage cost. No Anthropic key is committed or included in the demo.
 See [live validation](live-validation.md) for the controls and billing limitations.
 
 An independent human must review [the label sheet](scorer-human-review.md) before the
@@ -70,3 +70,5 @@ Use the commands in [CONTRIBUTING](../CONTRIBUTING.md), [deployment](deployment.
 [operations verification](operations-verification.md) and [observability](observability.md).
 The release evidence manifest binds package hashes and test reports to a source commit;
 GitHub Actions independently records the exact revision for each run.
+
+The first remote matrix exposed a corpus fingerprint difference caused solely by CRLF/LF checkouts. The fingerprint now normalizes line endings; labels and all nine disagreements are unchanged. A regression test covers both checkout forms.

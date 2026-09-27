@@ -34,7 +34,8 @@ def confusion_counts(observations: list[tuple[bool, bool | None]]) -> dict[str, 
 
 
 def characterize(corpus_path: Path = DEFAULT_CORPUS) -> dict[str, Any]:
-    raw = corpus_path.read_bytes()
+    # Git can materialize CRLF on Windows. Freeze content independently of checkout newlines.
+    raw = corpus_path.read_bytes().replace(b"\r\n", b"\n")
     corpus = json.loads(raw)
     if corpus["schema_version"] != 1:
         raise ValueError("unsupported challenge corpus schema")
@@ -78,6 +79,7 @@ def characterize(corpus_path: Path = DEFAULT_CORPUS) -> dict[str, Any]:
     return {
         "schema_version": 1, "corpus_id": corpus["corpus_id"],
         "corpus_sha256": hashlib.sha256(raw).hexdigest(),
+        "corpus_hash_format": "UTF-8 file bytes with CRLF normalized to LF",
         "scoring_version": SCORING_VERSION, "gate_policy_version": GATE_POLICY_VERSION,
         "authorship": corpus["authorship"], "review_status": corpus["review_status"],
         "metric_semantics": "Positive means violation. Rates exclude unscored labels; inspect their counts.",

@@ -49,3 +49,31 @@ The output directory contains:
 `known_usage_cost_usd` uses returned token usage at the recorded prices. `reserved_usd` deliberately exceeds it and includes ambiguous calls; neither is invented provider usage. Trace latency measures the adapter invocation including token-counting, accounting, serialized queue time and network round trips, so it is not an isolated model-latency benchmark. A single repeat cannot establish repeatability or broad model safety. The [scorer characterization](scorer-characterization.md) documents nine known semantic disagreements that still apply when scoring real outputs.
 
 Review the synthetic evidence before copying selected results into the public release bundle. Record the real execution date, provider model returned where available, package commit, run ID and observed failures. Keep credentials and local databases out of publication unless deliberately sanitized and reviewed. Do not rerun merely to replace an unfavorable first result.
+
+## First live result
+
+On September 27, 2026, source commit `72411c76da57b45b4d26bd820c6db2991640933a`
+completed the first experiment against the direct Anthropic API. The returned model was
+`claude-sonnet-5`: 21 successful requests, 42,310 input tokens and 1,955 output tokens,
+for **$0.10417 estimated token cost** at the recorded rates. The conservative ledger
+reserved $1.411024 of its $5 ceiling. No ambiguous requests or retries were recorded.
+The result was not rerun to improve the score.
+
+The ten-case subset plus one timeout probe produced **1/10 passing cases**, no critical
+security findings, three major findings and nine minor latency findings. The gate paused
+for human review; no approval was manufactured. The timeout recovery probe passed.
+There is no compatible earlier live baseline and one repeat does not measure stability.
+
+Nine cases exceeded the inherited 8-second latency budget. The serialized spending guard,
+preflight token counting and queue time are included in measured invocation latency; this
+is an end-to-end experiment under these controls, not a clean provider-latency benchmark.
+The major findings were a missing literal final-sale phrase, a clarification lacking the
+configured abstention marker, and missing expected email tool calls. The first two overlap
+known phrase-matching limitations. Review raw evidence before treating a score as semantic
+model quality; do not change thresholds retrospectively to relabel this run as passing.
+
+Inspect the [sanitized structured result](evidence/live-validation.json) and
+[original run report](evidence/live-report.md). Traces contain only synthetic fixtures;
+provider request identifiers were omitted from public evidence. The private local ledger
+and evaluation database preserve the complete original run. A future benchmark should
+predeclare live-service budgets and measure guard overhead separately.

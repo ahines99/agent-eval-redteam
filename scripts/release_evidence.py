@@ -52,7 +52,7 @@ def main() -> int:
                   "test_reports": results, "artifacts_sha256": hashes}
     (destination / "manifest.json").write_text(json.dumps(provenance, indent=2) + "\n", encoding="utf-8")
     for name in ("controls.json", "candidate-report.md", "scorer-characterization.json", "otlp-transport.json",
-                 "collector.json", "operations.json"):
+                 "collector.json", "operations.json", "live-validation.json", "live-report.md"):
         path = ROOT / "docs/evidence" / name
         if path.exists():
             shutil.copy2(path, destination / name)

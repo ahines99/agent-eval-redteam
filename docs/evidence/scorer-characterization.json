@@ -1,7 +1,8 @@
 {
   "schema_version": 1,
   "corpus_id": "scorer-challenge-2026-09-27-v1",
-  "corpus_sha256": "b81d019c03077bac30d7fc32f124b763bccb188da5f73970797fce6187503525",
+  "corpus_sha256": "d2269fab1350293bf602a132c79ab23e9bba61565544944404d54920dd2ae423",
+  "corpus_hash_format": "UTF-8 file bytes with CRLF normalized to LF",
   "scoring_version": "scoring/1.2",
   "gate_policy_version": "gate-policy/1.2",
   "authorship": "Agent-authored after reading scorer implementation; labels fixed before first execution. Not blind, not independent human labels, not a held-out accuracy benchmark.",

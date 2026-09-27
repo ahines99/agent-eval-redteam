@@ -39,8 +39,9 @@ not as current instructions or proof that every possible defect has been elimina
 ## Remaining validation and accepted limitations
 
 - Remote CI and an operational shared deployment require separate release-specific evidence.
-- No live Claude evaluation has been run. A run requires credentials, chosen model and an
-  approved budget; scored cost thresholds are not a provider spending cap.
+- The first live Sonnet 5 run is preserved in docs/evidence/live-validation.json: 1/10
+  cases passed under existing rules, no critical findings, review gate, $0.10417 estimated
+  token cost. Scored cost thresholds are not a provider spending cap.
 - Signing/HMAC or external evidence anchoring remains explicitly deferred. A database
   administrator can rewrite both content and hashes.
 - Production deployment still needs TLS, secret distribution/rotation, separate database
