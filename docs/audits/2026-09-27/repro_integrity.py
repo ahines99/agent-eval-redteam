@@ -18,4 +18,3 @@ async def main():
  print('after_scoring',r.status,r.release_decision,'case_count',r.scorecard['n_cases'])
  p.repo.close()
 asyncio.run(main())
-
