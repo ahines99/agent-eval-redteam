@@ -20,7 +20,7 @@ jobs:
           - {os: ubuntu-latest, python: '3.14'}
           - {os: windows-latest, python: '3.12'}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
@@ -64,7 +64,7 @@ jobs:
     env:
       TEST_POSTGRES_URL: postgresql+psycopg://eval:local-ci-only@localhost:5432/agent_eval_test
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -75,7 +75,7 @@ jobs:
   container:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: docker build -t agent-eval-ci .
       - run: docker run --rm --entrypoint python agent-eval-ci scripts/smoke_installed.py
       - run: docker compose config --quiet
