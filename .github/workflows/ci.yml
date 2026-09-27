@@ -20,8 +20,8 @@ jobs:
           - {os: ubuntu-latest, python: '3.14'}
           - {os: windows-latest, python: '3.12'}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-python@v7.0.0
         with:
           python-version: ${{ matrix.python }}
       - run: python -m pip install uv==0.12.18
@@ -39,7 +39,7 @@ jobs:
           "$PY" -m pip install --require-hashes -r "$RUNNER_TEMP/runtime.txt"
           "$PY" -m pip install --no-deps dist/*.whl
           "$PY" scripts/smoke_installed.py --output-dir data/verification/wheel
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7.0.1
         with:
           name: verification-${{ matrix.os }}-${{ matrix.python }}
           path: |
@@ -64,8 +64,8 @@ jobs:
     env:
       TEST_POSTGRES_URL: postgresql+psycopg://eval:local-ci-only@localhost:5432/agent_eval_test
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-python@v7.0.0
         with:
           python-version: '3.12'
       - run: python -m pip install uv==0.12.18
@@ -75,11 +75,11 @@ jobs:
   container:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
       - run: docker build -t agent-eval-ci .
       - run: docker run --rm --entrypoint python agent-eval-ci scripts/smoke_installed.py
       - run: docker compose config --quiet
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7.0.0
         with:
           python-version: '3.12'
       - run: python -m pip install uv==0.12.18
@@ -87,7 +87,7 @@ jobs:
       - run: docker compose build
       - run: docker compose run --rm --entrypoint alembic eval upgrade head
       - run: uv run --frozen python scripts/mcp_walkthrough.py --container --output-dir data/verification/compose
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7.0.1
         with:
           name: compose-verification
           path: data/verification/compose/
