@@ -8,8 +8,8 @@ The public website is a static demonstration; it does not accept credentials or 
 ## Verified locally
 
 - Windows / Python 3.14 and Linux / Python 3.12: full suite passed, including PostgreSQL.
-  Latest complete local runs each passed 287 tests; Windows line coverage was 95.50%.
-  Additional final budget tests are recorded in the release evidence and CI.
+  The recorded complete local runs each passed 287 tests; Windows line coverage was 95.50%.
+  Subsequent focused tests and the expanded remote matrix are recorded in release evidence and CI.
 - Ruff passes; mypy passes across 22 production source files.
 - PostgreSQL 17.11: eight backend tests pass, including independent connection contention,
   fencing, capacity, transactional rollback, approval races and retained-data migration.
@@ -36,14 +36,14 @@ The public website is a static demonstration; it does not accept credentials or 
 | F01 PostgreSQL demo keys | Repaired; shared demo assertions run on SQLite and PostgreSQL |
 | F02 behavioral delivery smoke | `scripts/verify_demo.py` and `scripts/smoke_installed.py`; installed container passed |
 | F03 execution of delivery environments | Local Docker, Compose and PostgreSQL passed; remote PostgreSQL/container jobs passed; final matrix tracked in [CI](https://github.com/ahines99/agent-eval-redteam/actions/workflows/ci.yml) |
-| F04 release snapshot/publication | Repository published on main; release tag and artifacts follow successful final CI |
+| F04 release snapshot/publication | Public main branch; tagged artifacts and checksums are published through [GitHub Releases](https://github.com/ahines99/agent-eval-redteam/releases) after successful CI |
 | F05 reviewer onboarding | README, `docs/mcp-quickstart.md`, executable `scripts/mcp_walkthrough.py`; actual subprocess validated |
 | F06 accessible demo | `docs/demo.html`, original recording and static preview; Pages deployment passed; public page returns the exact committed demo bytes |
 | F07 case study | `docs/case-study.md`, including AI assistance and bounded results |
 | F08 durable evidence | `docs/evidence/`, CI test/artifact uploads, `scripts/release_evidence.py` |
 | F09 claim accuracy | Current docs distinguish implemented, locally verified and externally executed capabilities |
 | F10 maintenance surface | Changelog, contribution guide, metadata and enabled GitHub private vulnerability reporting |
-| F11 compatibility | Linux/Windows local evidence; remote matrix configured for Linux 3.12/3.13/3.14 and Windows 3.12 |
+| F11 compatibility | Linux/Windows local evidence; remote Linux 3.12/3.13/3.14 passed; Windows 3.12 tracked in the current CI run |
 | F12 scorer characterization | 33 traces / 35 proposed labels; nine disagreements retained; **independent human review pending** |
 | F13 PostgreSQL concurrency | Eight actual PostgreSQL tests passed; contracts cover separate connections and competing actors |
 | F14 live model validation | Real Sonnet 5 run complete: 21 requests, $0.10417 estimated token cost, 1/10 pass, review gate; preserved first result |
@@ -72,3 +72,5 @@ The release evidence manifest binds package hashes and test reports to a source 
 GitHub Actions independently records the exact revision for each run.
 
 The first remote matrix exposed a corpus fingerprint difference caused solely by CRLF/LF checkouts. The fingerprint now normalizes line endings; labels and all nine disagreements are unchanged. A regression test covers both checkout forms.
+
+The hosted Windows runner also exposed a five-second bootstrap HTTP timeout and a venv-launcher child cleanup issue in the operations verifier. It now uses a 60-second read bound and terminates its owned Windows process tree before deleting temporary databases; the behavior assertions remain unchanged.

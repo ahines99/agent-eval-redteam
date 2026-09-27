@@ -3,7 +3,7 @@
 This file describes repository changes. A version heading does not imply a published
 package, tag or successful external deployment; see release artifacts and validation evidence.
 
-## 0.2.0 (unreleased)
+## 0.2.0 - 2026-09-27
 
 ### Evaluation and correctness
 
@@ -51,3 +51,6 @@ package, tag or successful external deployment; see release artifacts and valida
   skills and offline demonstration paths.
 - Earlier audit notes and planning skeletons remain preserved as historical context in
   [IMPLEMENTATION_HANDOFF.md](IMPLEMENTATION_HANDOFF.md).
+
+- Published a static browser walkthrough, scorer challenge characterization, operational and official Collector evidence, and the first budgeted live Sonnet 5 result.
+- Added cross-platform corpus fingerprinting and reliable owned-process cleanup in the Windows operations verifier.

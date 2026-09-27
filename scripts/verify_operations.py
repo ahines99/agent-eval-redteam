@@ -97,7 +97,13 @@ def server(working: Path, config: Path) -> Iterator[tuple[str, subprocess.Popen[
                 raise TimeoutError("local HTTP server did not become ready")
             yield url, process
         finally:
-            process.terminate()
+            if sys.platform == "win32" and process.poll() is None:
+                # A venv interpreter may be a launcher with a child interpreter. Terminating
+                # only that launcher leaves the HTTP server holding SQLite files on Windows.
+                subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                               capture_output=True, check=True)
+            elif process.poll() is None:
+                process.terminate()
             try:
                 process.wait(timeout=10)
             except subprocess.TimeoutExpired:
@@ -110,7 +116,8 @@ async def client(url: str, token: str) -> AsyncIterator[Any]:
     @asynccontextmanager
     async def transport():
         async with (
-            httpx2.AsyncClient(headers={"Authorization": "Bearer " + token}, trust_env=False) as http,
+            httpx2.AsyncClient(headers={"Authorization": "Bearer " + token}, trust_env=False,
+                               timeout=httpx2.Timeout(60, connect=10)) as http,
             streamable_http_client(url, http_client=http) as streams,
         ):
             yield streams
