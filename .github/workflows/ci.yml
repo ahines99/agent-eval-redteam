@@ -21,7 +21,7 @@ jobs:
           - {os: windows-latest, python: '3.12'}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python }}
       - run: python -m pip install uv==0.12.18
@@ -65,7 +65,7 @@ jobs:
       TEST_POSTGRES_URL: postgresql+psycopg://eval:local-ci-only@localhost:5432/agent_eval_test
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
       - run: python -m pip install uv==0.12.18
@@ -79,7 +79,7 @@ jobs:
       - run: docker build -t agent-eval-ci .
       - run: docker run --rm --entrypoint python agent-eval-ci scripts/smoke_installed.py
       - run: docker compose config --quiet
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
       - run: python -m pip install uv==0.12.18
