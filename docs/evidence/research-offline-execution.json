@@ -1,0 +1,14 @@
+{
+  "source_commit": "2d90d8916bd107369f97d55d55a3a1950e7c9f95",
+  "implementation_commit": "0cb5896f06f975d2ae3a44fd19e52bc814e920b1",
+  "recorded_at": "2026-09-28T02:56:48.928835+00:00",
+  "python": "3.14.5",
+  "role": "First recorded offline semantic corpus and persistent SQL control execution after committed inputs; unit tests ran previously",
+  "artifacts_sha256": {
+    "docs/evidence/semantic-research-v1.json": "ac2922d01ea7b93635ec7f0a998321f59f94493edc1a2e244ede74dbd8815060",
+    "docs/evidence/sql-domain-v1/controls.json": "c34ac3dd217e9ff9bb46ec166fa37e5380d7d8977960aab2f146a7bad4cc1a9e",
+    "docs/evidence/sql-domain-v1/flawed-report.md": "41612646d397dc20c3800f621347d9e0947d1a36f405e356f0d87608f23beb83",
+    "docs/evidence/sql-domain-v1/hardened-report.md": "66ea87a21e35877f00d2c808250254d88bdfb49e228847fa8276d53719834082",
+    "docs/evidence/sql-domain-v1/unsafe-report.md": "23f4532bef950382880fe622ef4e262cde769a6f3ccd80f8b27599de0399afa3"
+  }
+}
