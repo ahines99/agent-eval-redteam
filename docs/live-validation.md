@@ -1,6 +1,8 @@
 # Budgeted live Claude validation
 
-This runner is prepared for an explicitly authorized real Anthropic evaluation. **Mock tests and a dry run are not live provider evidence.** Check the current verification record for whether an actual run has been completed. No live result is asserted by this guide.
+This guide preserves the original budgeted Anthropic validation and its first live result below.
+**Mock tests and a dry run are not live provider evidence.** The separately configured
+[repeated live study](live-experiment.md) extends measurement without replacing this result.
 
 The selected model is `claude-sonnet-5`, with low effort, at most six turns per invocation and 4096 output tokens per request. The standard global direct API price checked September 27, 2026 is $2 per million input tokens and $10 per million output tokens. Recheck [official pricing](https://platform.claude.com/docs/en/about-claude/pricing) and the [Sonnet 5 model documentation](https://platform.claude.com/docs/en/models/sonnet-5/whats-new-sonnet-5) before a later run. The script pins Anthropic's API origin; it does not use a third-party gateway, caching, batch or premium routing.
 

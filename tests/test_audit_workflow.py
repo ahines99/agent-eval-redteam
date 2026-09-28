@@ -252,7 +252,7 @@ async def test_queued_case_rechecks_authorization_before_adapter_call(authorized
         "repeats": 3, "failure_plans": [],
     })
     authorized.register_suite(suite, registered_by="alice")
-    monkeypatch.setattr(primary, "CONCURRENCY", 1)
+    authorized.env.concurrency = 1
     ts = datetime.now(UTC)
     authorized.env.clock = lambda: ts
 

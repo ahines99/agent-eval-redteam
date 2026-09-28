@@ -59,6 +59,7 @@ class EvalEnvironment:
     repo: Repository
     adapter_factory: Callable[[AgentRecord], AgentAdapter]
     clock: Callable[[], datetime] = lambda: datetime.now(UTC)
+    concurrency: int = CONCURRENCY
 
     def agent(self, agent_id: str) -> AgentRecord:
         agent = self.repo.get_agent(agent_id)
@@ -130,7 +131,9 @@ async def run_case(adapter: AgentAdapter, agent: AgentRecord, suite: EvalSuite, 
 
 async def _run_jobs(env: EvalEnvironment, jobs: Sequence[Callable[[], Awaitable[Trace]]], ids: list[str]) -> None:
     """Run jobs whose trace isn't stored yet; each trace is persisted as soon as it completes."""
-    sem = asyncio.Semaphore(CONCURRENCY)
+    if type(env.concurrency) is not int or not 1 <= env.concurrency <= CONCURRENCY:
+        raise ValueError(f"concurrency must be an integer from 1 to {CONCURRENCY}")
+    sem = asyncio.Semaphore(env.concurrency)
 
     async def one(job: Callable[[], Awaitable[Trace]]) -> None:
         async with sem:

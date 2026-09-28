@@ -52,12 +52,9 @@ def main() -> int:
                   "lock_sha256": hashlib.sha256((ROOT / "uv.lock").read_bytes()).hexdigest(),
                   "test_reports": results, "artifacts_sha256": hashes}
     (destination / "manifest.json").write_text(json.dumps(provenance, indent=2) + "\n", encoding="utf-8")
-    for name in ("controls.json", "candidate-report.md", "scorer-characterization.json",
-                 "scorer-characterization.human-reviewed.json", "otlp-transport.json",
-                 "collector.json", "operations.json", "tls-proxy.json", "live-validation.json", "live-report.md"):
-        path = ROOT / "docs/evidence" / name
-        if path.exists():
-            shutil.copy2(path, destination / name)
+    # Keep historical and research evidence together, including nested execution records.
+    shutil.copytree(ROOT / "docs/evidence", destination / "evidence", dirs_exist_ok=True)
+    shutil.copytree(ROOT / "benchmarks", destination / "benchmarks", dirs_exist_ok=True)
     (ROOT / "dist/SHA256SUMS").write_text("".join(f"{digest}  {name}\n" for name, digest in hashes.items()),
                                          encoding="ascii")
     shutil.make_archive(str(ROOT / "dist" / f"verification-{version}"), "zip", destination)

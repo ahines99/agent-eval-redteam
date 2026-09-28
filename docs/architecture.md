@@ -1,4 +1,4 @@
-# Architecture (0.2.0)
+# Architecture (0.3.0)
 
 `domain/services.py` is the application entry point for MCP, CLI and tests.
 
@@ -9,6 +9,12 @@
 | `workflows/` | Eight-step state machine, failure handling, comparisons and release gating |
 | `adapters/` | SQL persistence, synthetic sandbox, scripted and Claude agents |
 | `skills/` | Procedures for clients interpreting and extending evaluations |
+
+Research additions are separate from the production gate: `domain/semantic.py` provides
+constrained reference-grounded advisory checks, and `domain/benchmark.py` provides metric,
+review and adjudication contracts. `adapters/sql_domain.py` extends scripted controls with
+actual isolated SQLite query execution. Its fixture version and fingerprint are bound to
+agent configuration and suite evidence. See [the research roadmap](research-roadmap.md).
 
 ## State, ownership and recovery
 
@@ -36,6 +42,8 @@ unfinished evaluation under new semantics.
 Cases execute with concurrency four. Inside that admission boundary, ownership and current
 authorization are checked before invoking the adapter for the case. This does not revoke
 an adapter/provider request already in flight. Ad-hoc probes check authorization too.
+The isolated live-study environment selects concurrency one to separate queue overhead;
+the standard platform default remains four.
 
 ## Sandbox and failures
 

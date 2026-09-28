@@ -3,6 +3,25 @@
 This file describes repository changes. A version heading does not imply a published
 package, tag or successful external deployment; see release artifacts and validation evidence.
 
+## 0.3.0 - research evidence extension
+
+- Added a versioned advisory evaluator for constrained reference-grounded claims, citation
+  support, equivalent units, known word-digit disclosures and explicit uncertainty.
+  Existing deterministic scoring and critical release blocks remain authoritative.
+- Added research corpus freezing, precision/recall/F1/coverage, blinded review export,
+  two-reviewer agreement and reasoned adjudication with explicit provenance.
+- Added 120 new AI-authored traces across support and SQL scenarios, preserving paired-family
+  accounting and the absence of independent human labels.
+- Added a second domain with actual disposable read-only SQLite queries, twelve scripted
+  scenarios, denied writes, failure recovery and persistent release-gate control outcomes.
+- Added a pinned two-model repeated experiment with cumulative historical budget reservations,
+  component latency measurement and case-grouped analysis. New experiment evidence is separate
+  from the first live result and all earlier characterization reports.
+- Extended installed-wheel and container smoke checks to execute the SQL domain.
+
+See the [audit response and implementation roadmap](docs/research-roadmap.md). Independent
+human participation, external users and production business impact are not manufactured claims.
+
 ## AI benchmark evidence addendum - 2026-09-27
 
 - Recorded the owner's explicit replacement of F12's independent-human requirement with

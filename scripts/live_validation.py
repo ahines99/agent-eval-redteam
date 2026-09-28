@@ -8,6 +8,8 @@ import hashlib
 import json
 import os
 import sqlite3
+import time
+from collections.abc import Callable
 from contextlib import closing
 from decimal import Decimal
 from importlib.resources import files
@@ -85,10 +87,11 @@ class Ledger:
 
     def record(self, request_id: int, *, input_tokens: int | None = None,
                output_tokens: int | None = None, error_kind: str | None = None,
-               response_model: str | None = None, response_id: str | None = None) -> None:
+               response_model: str | None = None, response_id: str | None = None,
+               pricing: tuple[int, int] = (INPUT_MICRODOLLARS, OUTPUT_MICRODOLLARS)) -> None:
         actual = None
         if input_tokens is not None and output_tokens is not None:
-            actual = input_tokens * INPUT_MICRODOLLARS + output_tokens * OUTPUT_MICRODOLLARS
+            actual = input_tokens * pricing[0] + output_tokens * pricing[1]
         with closing(self._connect()) as db, db:
             db.execute("UPDATE requests SET state=?,input_tokens=?,output_tokens=?,actual_micros=?,error_kind=?, "
                        "response_model=?,response_id=? "
@@ -107,19 +110,33 @@ class Ledger:
 
 
 class BudgetedMessages:
-    def __init__(self, messages: Any, ledger: Ledger) -> None:
+    def __init__(self, messages: Any, ledger: Ledger, *, model: str = MODEL,
+                 pricing: tuple[int, int] = (INPUT_MICRODOLLARS, OUTPUT_MICRODOLLARS),
+                 observer: Callable[[dict[str, Any]], None] | None = None,
+                 clock: Callable[[], float] = time.perf_counter,
+                 require_response_model: bool = False) -> None:
         self.messages = messages
         self.ledger = ledger
         self.stopped = False
+        if any(type(value) is not int or value <= 0 for value in pricing):
+            raise ValueError("prices must be positive integer microdollars per token")
+        self.model, self.pricing = model, pricing
+        self.observer, self.clock = observer, clock
+        self.require_response_model = require_response_model
         # Serialize the whole request: no in-flight call can escape an accounting anomaly.
         self.lock = asyncio.Lock()
 
     async def create(self, **kwargs: Any) -> Any:
+        queued = self.clock()
         async with self.lock:
+            acquired = self.clock()
+            timing: dict[str, Any] = {"model": self.model, "queue_ms": (acquired - queued) * 1000,
+                                     "counting_ms": 0.0, "reservation_ms": 0.0,
+                                     "provider_http_ms": 0.0, "recording_ms": 0.0}
             if self.stopped:
                 raise BudgetRefused("live validation stopped after an earlier request failure")
             allowed = {"model", "max_tokens", "system", "tools", "messages", "output_config"}
-            if set(kwargs) - allowed or kwargs.get("model") != MODEL:
+            if set(kwargs) - allowed or kwargs.get("model") != self.model:
                 raise BudgetRefused("unpriced model or request feature")
             request = {**kwargs, "max_tokens": min(int(kwargs["max_tokens"]), MAX_OUTPUT)}
             if request["max_tokens"] <= 0:
@@ -134,18 +151,38 @@ class BudgetedMessages:
                 raise BudgetRefused("unsupported pricing feature in request")
             counting = {key: value for key, value in request.items() if key != "max_tokens"}
             try:
-                counted = await self.messages.count_tokens(**counting)
+                started = self.clock()
+                try:
+                    counted = await self.messages.count_tokens(**counting)
+                finally:
+                    timing["counting_ms"] = (self.clock() - started) * 1000
                 if type(counted.input_tokens) is not int or counted.input_tokens < 0:
                     raise BudgetRefused("invalid token count")
                 # Count tokens is an estimate. Reserve generous text/serialization headroom as well.
                 input_bound = max(counted.input_tokens * 2, len(serialized.encode("utf-8")) * 2) + 4096
-                reserve = input_bound * INPUT_MICRODOLLARS + request["max_tokens"] * OUTPUT_MICRODOLLARS
-                request_id = self.ledger.reserve(reserve, counted.input_tokens)
-            except Exception as exc:
+                reserve = input_bound * self.pricing[0] + request["max_tokens"] * self.pricing[1]
+                started = self.clock()
+                try:
+                    request_id = self.ledger.reserve(reserve, counted.input_tokens)
+                finally:
+                    timing["reservation_ms"] = (self.clock() - started) * 1000
+                timing["request_id"] = request_id
+            except BaseException as exc:
                 self.stopped = True
+                timing.update(state="preflight_refused", total_ms=(self.clock() - queued) * 1000)
+                if self.observer:
+                    self.observer(timing)
+                if isinstance(exc, asyncio.CancelledError):
+                    raise
                 raise BudgetRefused(f"preflight refused: {type(exc).__name__}") from None
             try:
-                response = await self.messages.create(**request)
+                started = self.clock()
+                try:
+                    response = await self.messages.create(**request)
+                finally:
+                    timing["provider_http_ms"] = (self.clock() - started) * 1000
+                if self.require_response_model and getattr(response, "model", None) != self.model:
+                    raise BudgetRefused("provider returned a different model")
                 usage = response.usage
                 if (type(usage.input_tokens) is not int or type(usage.output_tokens) is not int
                         or usage.input_tokens < 0 or usage.output_tokens < 0
@@ -153,16 +190,30 @@ class BudgetedMessages:
                         or getattr(usage, "cache_read_input_tokens", 0)
                         or usage.input_tokens > input_bound or usage.output_tokens > request["max_tokens"]):
                     raise BudgetRefused("provider usage exceeded priced request bounds; stop and inspect billing")
-                self.ledger.record(request_id, input_tokens=usage.input_tokens, output_tokens=usage.output_tokens,
-                                   response_model=getattr(response, "model", None),
-                                   response_id=getattr(response, "id", None))
+                started = self.clock()
+                try:
+                    self.ledger.record(request_id, input_tokens=usage.input_tokens, output_tokens=usage.output_tokens,
+                                       response_model=getattr(response, "model", None),
+                                       response_id=getattr(response, "id", None), pricing=self.pricing)
+                finally:
+                    timing["recording_ms"] = (self.clock() - started) * 1000
+                timing["state"] = "completed"
                 return response
             except BaseException as exc:
                 self.stopped = True
-                self.ledger.record(request_id, error_kind=type(exc).__name__)
+                timing["state"] = "ambiguous"
+                started = self.clock()
+                try:
+                    self.ledger.record(request_id, error_kind=type(exc).__name__)
+                finally:
+                    timing["recording_ms"] += (self.clock() - started) * 1000
                 if isinstance(exc, asyncio.CancelledError):
                     raise
                 raise BudgetRefused(f"request stopped: {type(exc).__name__}; reservation retained") from None
+            finally:
+                timing["total_ms"] = (self.clock() - queued) * 1000
+                if self.observer:
+                    self.observer(timing)
 
 
 def validation_suite() -> EvalSuite:

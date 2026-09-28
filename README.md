@@ -5,7 +5,7 @@ deterministic rules, and stop at a release gate when human review is required. T
 checks factuality, tools, permissions, injection resistance, data disclosure, citations,
 calibration, recovery, latency, estimated cost and repeatability. It never deploys an agent.
 
-Version **0.2.1** is a local-first Python/MCP application with an optional authenticated
+Version **0.3.0** is a local-first Python/MCP application with an optional authenticated
 HTTP server. For a quick review, open the [browser demo](docs/demo.html), read the
 [project case study](docs/case-study.md), or try the offline command below.
 
@@ -17,6 +17,14 @@ The [expanded AI-authored benchmark](docs/scorer-ai-characterization.md) preserv
 disagreements across 40 labeled traces. Its provenance and limits are explicit: independent
 human validation has not been performed on that set. See the [verification record](docs/VERIFICATION.md)
 for the accepted portfolio scope and release evidence.
+
+The [research roadmap](docs/research-roadmap.md) adds a constrained
+[semantic advisory evaluator](docs/semantic-evaluation.md), a
+[120-trace research/reviewer workflow](docs/benchmark-research.md), a real
+[synthetic SQL domain](docs/sql-domain.md), and a [repeated live study](docs/live-experiment.md).
+These are separately versioned research capabilities. The production `scoring/1.2` release
+gate and all earlier published results remain intact; advisory semantic findings cannot
+approve a release or override a critical block.
 
 ## Try the offline demo
 
@@ -165,7 +173,7 @@ SQLite migrations, actual stdio restart and authenticated HTTP socket tests. A r
 Docker build and behavioral container smoke passed, and PostgreSQL 17.11 passed the
 backend contract checks. These local results do not establish remote CI success or an
 externally deployed service. Check [GitHub Actions](https://github.com/ahines99/agent-eval-redteam/actions)
-and the [verification record](docs/audits/2026-09-27/RESOLUTION.md) for release-specific evidence.
+and the [verification record](docs/VERIFICATION.md) for release-specific evidence.
 
 The sandbox models one fictional retailer. Phrase checks and PII recognition are bounded
 heuristics, not general semantic judges or complete data-loss prevention. Wilson intervals

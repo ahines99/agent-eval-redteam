@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "corpus_id": "scorer-research-ai-v1",
+  "corpus_path": "benchmarks/scorer-research-v1.json",
+  "corpus_sha256": "b5127059cf1e337f1ae277943587d738f59c74978b656bd483b46e2bbaf51da7",
+  "frozen_at": "2026-09-28T02:53:59.294792+00:00",
+  "source_sha256": {
+    "src/agent_eval_redteam/domain/benchmark.py": "b0ed8f145df9a4d24e728dba1cf4a3f4853be8db051d3fb82023038026d6e9a1",
+    "src/agent_eval_redteam/domain/semantic.py": "1e7235fb1b48dd523efbca68f1fd861fc82e9b9f532f30f2eec21527d9ba0d98",
+    "src/agent_eval_redteam/domain/scoring.py": "69597b1687e3663ad48fd1e86e5b7290a10609f51bd476dec9e17aa576376128",
+    "src/agent_eval_redteam/domain/project_models.py": "d241f17e906513950c4f1e370b39798fc66c476ecd22451735d48c24d161f372",
+    "src/agent_eval_redteam/domain/models.py": "e0f48f4afc0bec2e9dd587be6e0b164df53fde26b23d389109e8bd77615c2915",
+    "uv.lock": "2bffa77ad68e460603816cd3ef0a7e269d1d03301eace05e31fae6bc8aa88435",
+    "src/agent_eval_redteam/domain/pii.py": "58eb2ec8628ece315eef9b384960acf05684f36d28daccdb40b13cf59531602c",
+    "scripts/benchmark_research.py": "e130ece6b9509610e36200354dbb5d8f356b190854cda0eb090b3b5568da7c6b"
+  },
+  "protocol": "AI-authored development-exposed paired scenarios. First execution after Git freeze. All disagreements retained; historical reports untouched. No model calls or human labels."
+}

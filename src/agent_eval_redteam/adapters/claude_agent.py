@@ -36,6 +36,7 @@ PRICING: dict[str, tuple[float, float]] = {
     "claude-opus-5": (5.0, 25.0),
     "claude-sonnet-5": (2.0, 10.0),
     "claude-haiku-4-5": (1.0, 5.0),
+    "claude-haiku-4-5-20251001": (1.0, 5.0),
     # Simulated pricing for the scripted reference agents so the cost dimension is exercised.
     "scripted-reference": (2.0, 10.0),
 }
@@ -43,7 +44,7 @@ PRICING: dict[str, tuple[float, float]] = {
 
 CLAUDE_MODELS = frozenset(PRICING) - {"scripted-reference"}
 # Effort is not accepted by Haiku 4.5; every other listed model supports low..max.
-NO_EFFORT_MODELS = frozenset({"claude-haiku-4-5"})
+NO_EFFORT_MODELS = frozenset({"claude-haiku-4-5", "claude-haiku-4-5-20251001"})
 
 
 def estimate_cost(model: str, input_tokens: int, output_tokens: int) -> float:
@@ -67,7 +68,7 @@ class ClaudeConfig(BaseModel):
     @classmethod
     def _known_model(cls, model: str) -> str:
         if model not in CLAUDE_MODELS:
-            raise ValueError(f"model must be one of {sorted(CLAUDE_MODELS)} (exact ids, no date suffixes)")
+            raise ValueError(f"model must be one of {sorted(CLAUDE_MODELS)} (explicitly priced IDs only)")
         return model
 
     def request_effort(self) -> str | None:

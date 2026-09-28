@@ -42,6 +42,11 @@ assert fixtures.joinpath('suites', 'support-core.v1.2.0.json').is_file()
             (destination / "demo.txt").write_text(demo.stdout, encoding="utf-8")
             command.extend(["--output-dir", str(destination)])
         subprocess.run(command, cwd=working, env=environment, check=True)
+        sql_destination = (args.output_dir.resolve() / "sql-domain" if args.output_dir
+                           else Path(working) / "sql-domain")
+        subprocess.run([sys.executable, str(repo / "scripts" / "sql_walkthrough.py"),
+                        "--output-dir", str(sql_destination)], cwd=working, env=environment,
+                       check=True, capture_output=True, text=True, encoding="utf-8")
     return 0
 
 

@@ -356,6 +356,10 @@ class ScriptedAgent:
 
 def build_adapter(agent: AgentRecord, *, client: Any = None) -> AgentAdapter:
     if agent.adapter is AdapterKind.SCRIPTED:
+        if agent.config.get("domain") == "sql":
+            from .sql_domain import SqlControl
+
+            return SqlControl(agent.config)
         flaws = agent.config.get("flaws")
         if flaws is None:
             flaws = PRESETS[agent.config.get("preset", "hardened")]
