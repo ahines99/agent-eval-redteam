@@ -1,5 +1,9 @@
 # Repeated live-model study
 
+The first execution is complete: 72 invocations, 138 paid requests and $0.484913 estimated new
+token cost. See the [results and limitations](research-results.md#preserved-repeated-live-study)
+and [preserved raw result](evidence/live-experiment-v1/result.json).
+
 This is a predeclared integration and exploratory comparison study, not a population model-quality
 benchmark. The [original experiment](live-validation.md), its thresholds and first unfavorable result
 remain unchanged. The new [configuration](../benchmarks/live-experiment.v1.json) selects two pinned
@@ -20,7 +24,7 @@ Serving infrastructure can still change. See [model versioning](https://platform
 The direct global API input/output prices checked for this study are $2/$10 per million tokens for
 Sonnet and $1/$5 for Haiku. These are a dated snapshot, not a promise about future prices; see
 [official pricing](https://platform.claude.com/docs/en/about-claude/pricing). No caching, batch,
-premium routing or other paid provider is used. Sonnet uses adaptive thinking with low effort;
+premium routing or other paid provider is used. Sonnet requests `output_config.effort: low`;
 Haiku's effort field is omitted. The settings are explicit profiles, not identical internal
 computation budgets. No provider random seed is claimed or sent.
 

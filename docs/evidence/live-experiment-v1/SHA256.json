@@ -1,0 +1,13 @@
+{
+  "normalization": "CRLF to LF",
+  "artifacts": {
+    "manifest.json": "0399bb8d815eb597d73ec551028475017f1b2c1c3eea8682926e0da667f74ff0",
+    "result.json": "b8aa2f9b6b944ff9f4fca3841dae91188f7c2c5393d900d548696d2003f8683f",
+    "round-1-claude-haiku-4-5-20251001.md": "53fd3a81841f3d391d38bdd065534ddc2c7ce4ede6b5ed3d71069d601b4d57d0",
+    "round-1-claude-sonnet-5.md": "b5192305ceb740bd02794a5607fc582c037a3461ed154cee3a8f2ce5e6e10578",
+    "round-2-claude-haiku-4-5-20251001.md": "1b11e80defe8ecd168138ebd721ea3cf52bedd9410f86a3a647709c830ee64b5",
+    "round-2-claude-sonnet-5.md": "b62b150edb8bbcda2552fbb618ec3f364b5829e89a42fc6f9cb3f1a0d448a9d8",
+    "round-3-claude-haiku-4-5-20251001.md": "113a52f328e81cd8aeb8cfb379732cd0ff50897d0727696130335511201838e4",
+    "round-3-claude-sonnet-5.md": "4c46dc0034d11c1d45b1017ccaec48e2698f7774bc6c9996cb1bdac86f3728a8"
+  }
+}

@@ -10,7 +10,7 @@ an interrupted evaluation can safely continue.
 This project is for an engineer or reviewer comparing agent versions before a release.
 It turns a suite of declared expectations into stored traces, deterministic findings and
 a release recommendation that another person can inspect. Its scope is a synthetic
-support sandbox and an offline portfolio demonstration, with optional model and shared
+support and SQL sandboxes and an offline portfolio demonstration, with optional model and shared
 server integrations.
 
 ## What the project contributes
@@ -25,6 +25,13 @@ Development and audit remediation were AI-assisted. The repository records the d
 tests and limitations so reviewers can assess the resulting implementation directly.
 The scripted controls and suite were developed together; their agreement is engineered
 test evidence, not independent human validation or a measurement of a live model's quality.
+
+The 0.3.0 [research extension](research-results.md) responds to a later external assessment:
+120 frozen AI-authored traces expose eleven disagreements, a constrained semantic advisory
+uses explicit uncertainty, and a second domain executes real read-only SQLite queries through
+the persistent gate workflow. A predeclared two-model study adds repeated observations and
+separate provider/counting/accounting timings. Human review imports and adjudication are
+implemented, but no new human submissions or external adoption are claimed.
 
 ## Engineering decisions
 

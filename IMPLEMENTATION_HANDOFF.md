@@ -1,4 +1,13 @@
-# Current implementation handoff - 0.2.1 (2026-09-27)
+# Current implementation handoff - 0.3.0
+
+The [research roadmap](docs/research-roadmap.md), [first results](docs/research-results.md) and
+[verification record](docs/VERIFICATION.md) supersede the 0.2.1 snapshot below. The extension adds
+an advisory semantic evaluator, 120 AI-authored traces and reviewer tooling, twelve actual SQL
+cases, and a predeclared repeated live-study runner. Deterministic scoring/1.2 and gate-policy/1.2
+remain unchanged. New benchmark labels are not independently human-validated, and advisory results
+cannot relax the gate. Consult the exact release evidence for final CI and live-study outcomes.
+
+# Historical implementation handoff - 0.2.1 (2026-09-27)
 
 For the latest portfolio completion state and verification, see [docs/VERIFICATION.md](docs/VERIFICATION.md).
 

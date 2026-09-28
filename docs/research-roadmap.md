@@ -4,6 +4,11 @@ Baseline: public `v0.2.1`, main `2f318dc`. This roadmap responds to the supplied
 portfolio assessment. It extends the completed local-first project; it does not rewrite its
 workflow engine or retroactively change published results.
 
+Implementation and first experiments are complete in 0.3.0. The
+[audit disposition and preserved results](research-results.md) map each workstream to its
+evidence and remaining limits; the [verification record](VERIFICATION.md) tracks delivery.
+The live study completed all 72 invocations with $0.484913 estimated new token cost.
+
 ## Review of the assessment
 
 The substantive gaps are valid: deterministic scoring has semantic blind spots, the labeled

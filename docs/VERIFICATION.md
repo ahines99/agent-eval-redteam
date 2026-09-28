@@ -1,6 +1,34 @@
 # Portfolio verification record
 
-Updated September 27, 2026. This is the current status; audit reports preserve earlier snapshots.
+## Current research release: 0.3.0
+
+The [audit response and results](research-results.md) supersede the historical 0.2.1 status below.
+The local-first deployment and authenticated shared-server scope are unchanged. New evidence includes
+120 AI-authored traces with eleven retained disagreements, twenty semantic probes, a twelve-case
+actual SQL domain, and a complete two-model/three-round live study. Advisory semantics cannot relax
+the deterministic release gate. No independent human benchmark or external adoption is claimed.
+
+- Local Windows/Python 3.14: **392 passed, 16 PostgreSQL-only skipped, 95.77% line coverage**.
+- Ruff passes; mypy passes across **25 production source files**.
+- An installed 0.3.0 wheel outside the source tree passes both support and SQL workflows on Windows/Python 3.12.
+- The [integration CI run](https://github.com/ahines99/agent-eval-redteam/actions/runs/36371935315)
+  records the exact delivery revision. PostgreSQL and container jobs pass, including installed SQL,
+  Compose restart and private HTTPS checks. Final release evidence records the complete matrix.
+- New live evidence: **72 invocations / 138 API requests**, twelve actually triggered/recovered failure
+  probes, 22/30 Sonnet and 24/30 Haiku baseline passes; two critical Haiku policy findings remain visible.
+  New estimated token cost is $0.484913; cumulative known cost $0.589083 and retained reservations
+  $8.323672 against the $12 study ceiling, within the owner's $20 authorization.
+- Original scorers, gates, published corpora and 0.2.x assets remain unchanged. Frozen research sources
+  are tied to `0cb5896`; the committed live manifest preceded all study calls.
+
+The first remote extension run exposed a missing SQL walkthrough in the container image and a Linux
+platform probe intercepted by a test mock. Both delivery/test defects were corrected; experimental
+runtime sources and first results were preserved. The source-bound release bundle distinguishes
+runtime experiment commits, delivery fixes and the final release revision.
+
+## Historical verification: 0.2.1
+
+Recorded September 27, 2026. Counts and release state below describe the earlier snapshot.
 
 The project is a local-first 0.2.1 release with an authenticated shared-server option.
 The public website is a static demonstration; it does not accept credentials or run models.
