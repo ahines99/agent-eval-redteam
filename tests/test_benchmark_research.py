@@ -235,6 +235,9 @@ def test_freeze_enforcement_and_failure_record(corpus, tmp_path, monkeypatch):
         return (tmp_path / command[-1].split(":", 1)[1]).read_bytes()
 
     monkeypatch.setattr(cli.subprocess, "check_output", git)
+    # platform.platform() may itself invoke subprocess on Linux. Keep runtime metadata
+    # deterministic so the Git-only fake cannot intercept an unrelated system probe.
+    monkeypatch.setattr(cli.platform, "platform", lambda: "synthetic-test-platform")
     # A changed source refuses execution before a result destination is created.
     source.write_text("# changed\n")
     with pytest.raises(ValueError, match="source changed"):
@@ -257,6 +260,7 @@ def test_freeze_enforcement_and_failure_record(corpus, tmp_path, monkeypatch):
         cli.run(corpus, manifest, "HEAD", output)
     record = json.loads((output / "execution.json").read_text())
     assert record["exit_code"] == 1 and record["error_type"] == "RuntimeError"
+    assert record["platform"] == "synthetic-test-platform"
     assert record["manifest"] == original
     with pytest.raises(FileExistsError):
         cli.run(corpus, manifest, "HEAD", output)

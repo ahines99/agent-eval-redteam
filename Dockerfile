@@ -10,7 +10,7 @@ RUN uv sync --frozen --no-dev --extra postgres --extra migrations --no-editable 
     && mkdir /app/data && chown app:app /app/data
 COPY alembic.ini ./
 COPY migrations ./migrations
-COPY scripts/smoke_installed.py scripts/verify_demo.py ./scripts/
+COPY scripts/smoke_installed.py scripts/verify_demo.py scripts/sql_walkthrough.py ./scripts/
 ENV PATH="/app/.venv/bin:$PATH" DATABASE_URL="sqlite:////app/data/agent_eval.db"
 USER app
 # Stdio is the safe default; no HTTP listener is exposed by this image.
