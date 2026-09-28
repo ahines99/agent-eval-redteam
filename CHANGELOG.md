@@ -3,6 +3,20 @@
 This file describes repository changes. A version heading does not imply a published
 package, tag or successful external deployment; see release artifacts and validation evidence.
 
+## 0.2.1 - 2026-09-27
+
+- Fixed approval of an older pending review after another run blocked the same agent version.
+  Current release decisions and accepted baseline selection honor every committed version-wide
+  block, while historical gate artifacts and approvals remain unchanged.
+- Serialized gate publication and approval across independent SQLite/PostgreSQL connections.
+  A gate computed before a concurrent block is refreshed at commit, including its audit hash,
+  pause state and workflow context. Committed gates cannot be overwritten.
+- Added end-to-end stale-review, historical eligibility, baseline exclusion, corrupted-evidence,
+  failed-monitoring and both approval/block transaction-order regressions on both backends.
+- Corrected F12 completion accounting: existing human label review is complete; a new independent
+  human-authored benchmark and walkthrough remain required. Added its authoring packet.
+- Repaired presentation separators and made release evidence packaging version-aware.
+
 ## Human-review addendum - 2026-09-27
 
 - Recorded Alexander Hines's approval of all 33 scorer challenge rows and 35 dimension labels.

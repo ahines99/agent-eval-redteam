@@ -1,4 +1,4 @@
-# Threat model (0.2.0)
+# Threat model (0.2.1)
 
 Assets: evaluation integrity, evidence, release decisions, synthetic fixtures, model
 credentials and tenant data. Operators, approvers and suite authors have different roles.
@@ -26,12 +26,19 @@ The server host/database administrator remains trusted.
 | Concurrent workflow commits | Expiring leases, heartbeat, fenced writes and deterministic ids |
 | Crash around human review | Atomic checkpoint and pause; unresolved review restored to `needs_review` |
 | Weak chosen baseline | Automatic accepted baseline with matching evaluation identity; caller baseline informational |
-| Blocked version shops suites | Earlier block remains binding for that agent version |
+| Blocked version shops suites or approves a stale review | Committed block applies to every run of that version; approval/block commits serialize on its agent row; blocked versions are excluded from accepted baselines |
 | Resource exhaustion | Suite admission limits, eight active runs/database, 16 HTTP requests/process |
 | Sensitive telemetry | Opt-in export with allowlisted identifiers/counts and class-only failures |
 
 Classification and PII detection are heuristics. Tests cover declared patterns, not every
 possible attack, personal datum or encoding. Report a pass as evidence about its suite.
+
+Gate artifacts and approval records preserve historical decisions. `release_decision` is the
+current effective result; `version_block_run_ids` names the committed gates that block the version.
+Thus a previously recorded PASS or approval can coexist with a currently blocked release result.
+A failed monitoring step cannot erase a committed block. Rejection of a stale review is allowed
+for bookkeeping, but approval is refused after a block. A decision read reflects committed state
+at its database read; later discoveries can change effective eligibility.
 
 ## Deployment trust
 

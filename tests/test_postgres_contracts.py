@@ -35,6 +35,7 @@ from agent_eval_redteam.domain.policies import PolicyViolation
 from agent_eval_redteam.domain.project_models import Trace
 from agent_eval_redteam.domain.services import EvalPlatform, bootstrap, bundled_suites
 
+from .conftest import gate_payload
 from .test_delivery import assert_schema_matches, migration_config
 from .test_delivery import postgres_url as postgres_url  # noqa: F401 - shared pytest fixture
 
@@ -160,7 +161,7 @@ def test_failed_audit_insert_rolls_back_entire_transition(repository_pair, opera
     try:
         with first.execution_scope(run_id, owner), pytest.raises(IntegrityError):
             if operation == "checkpoint":
-                first.checkpoint(run_id, "Gate release", {"decision": {"outcome": "review"}},
+                first.checkpoint(run_id, "Gate release", gate_payload(),
                                  [event, malformed], pause=True)
             else:
                 first.transition_run(run_id, [event, malformed], status="complete", current_step=None)
@@ -169,7 +170,7 @@ def test_failed_audit_insert_rolls_back_entire_transition(repository_pair, opera
         assert observer.audit_trail(run_id) == []
         # PostgreSQL must remain usable after the aborted transaction, including its fencing path.
         with first.execution_scope(run_id, owner):
-            first.checkpoint(run_id, "Gate release", {"decision": {"outcome": "review"}}, [event], pause=True)
+            first.checkpoint(run_id, "Gate release", gate_payload(), [event], pause=True)
         assert observer.get_run(run_id)["status"] == "needs_review"
         assert len(observer.audit_trail(run_id)) == 1
         assert "Gate release" in observer.artifacts(run_id)
@@ -208,7 +209,7 @@ def test_upgrade_preserves_run_evidence_review_and_audit(backend_url):
     body = trace.model_dump(mode="json")
     digest = canonical_hash(body)
     evidence_id = stable_id("evidence", trace_id)
-    gate = {"decision": {"outcome": "review"}}
+    gate = gate_payload()
     try:
         with engine.begin() as connection:
             assert "execution_leases" not in inspect(connection).get_table_names()

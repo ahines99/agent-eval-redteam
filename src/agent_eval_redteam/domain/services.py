@@ -11,7 +11,7 @@ from datetime import UTC, datetime, timedelta
 from importlib import resources
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.exc import IntegrityError
 
 from ..adapters.agents import AgentAdapter, build_adapter
@@ -72,6 +72,7 @@ class RunSummary(BaseModel):
     scorecard: dict[str, Any] | None
     gate: GateDecision | None
     release_decision: str
+    version_block_run_ids: list[str] = Field(default_factory=list)
     comparison: dict[str, Any] | None
     requested_comparison: dict[str, Any] | None
     regression_alerts: list[str]
@@ -263,6 +264,7 @@ class EvalPlatform:
         gate = arts.get(GATE_STEP, {}).get("payload")
         comparison = arts.get("Compare versions/models", {}).get("payload")
         monitor = arts.get("Monitor regressions", {}).get("payload")
+        blocked_run_ids = self.repo.version_blocks(run_id)
         return RunSummary(
             run_id=run_id, status=run["status"], current_step=run["current_step"], agent_id=run["agent_id"],
             suite=f"{run['suite_id']}@{run['suite_version']}", requested_by=run["requested_by"], error=run["error"],
@@ -270,7 +272,8 @@ class EvalPlatform:
                    for s in PROJECT_STEPS],
             scorecard=score["scorecard"] if score else None,
             gate=GateDecision.model_validate(gate["decision"]) if gate else None,
-            release_decision=release_decision(self.repo, run_id, gate),
+            release_decision=release_decision(self.repo, run_id, gate, blocked_run_ids=blocked_run_ids),
+            version_block_run_ids=blocked_run_ids,
             comparison={k: v for k, v in comparison.items() if k != "requested"} if comparison else None,
             requested_comparison=comparison.get("requested") if comparison else None,
             regression_alerts=monitor["alerts"] if monitor else [],
@@ -373,8 +376,13 @@ class EvalPlatform:
                       "", "| dimension | pass rate |", "|---|---|"]
             lines += [f"| {d} | {r:.2f} |" for d, r in c["dimension_pass_rates"].items()]
         if s.gate:
-            lines += ["", f"## Gate: {s.gate.outcome.value} ({s.gate.policy_version})"]
+            lines += ["", f"## Recorded gate: {s.gate.outcome.value} ({s.gate.policy_version})"]
             lines += [f"- {r}" for r in s.gate.reasons]
+        if s.version_block_run_ids:
+            lines += ["", "## Effective version-wide block",
+                      "The recorded gate and approvals are historical evidence. Current release eligibility "
+                      "is blocked by the following committed run(s), and this version cannot be an accepted baseline:"]
+            lines += [f"- `{rid}`" for rid in s.version_block_run_ids]
         for title, cmp_ in (("Gating comparison", s.comparison), ("Requested comparison (informational)",
                                                                    s.requested_comparison)):
             if not cmp_ or not cmp_.get("baseline_run_id"):

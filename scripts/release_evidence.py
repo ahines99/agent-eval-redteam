@@ -40,13 +40,14 @@ def main() -> int:
             raise SystemExit(f"Cannot certify failed or empty test report: {path.name}")
         results.append({"file": path.name, **counts})
         shutil.copy2(path, destination / path.name)
-    artifacts = sorted((ROOT / "dist").glob("agent_eval_redteam-0.2.0*"))
+    version = importlib.metadata.version("agent-eval-redteam")
+    artifacts = sorted((ROOT / "dist").glob(f"agent_eval_redteam-{version}*"))
     if len(artifacts) != 2:
-        raise SystemExit("Build the 0.2.0 wheel and source distribution first")
+        raise SystemExit(f"Build the {version} wheel and source distribution first")
     hashes = {path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in artifacts}
     provenance = {"generated_at": datetime.now(UTC).isoformat(), "commit": git("rev-parse", "HEAD"),
                   "tree": git("rev-parse", "HEAD^{tree}"), "dirty": bool(status),
-                  "package_version": importlib.metadata.version("agent-eval-redteam"),
+                  "package_version": version,
                   "python": platform.python_version(), "platform": platform.platform(),
                   "lock_sha256": hashlib.sha256((ROOT / "uv.lock").read_bytes()).hexdigest(),
                   "test_reports": results, "artifacts_sha256": hashes}
@@ -59,7 +60,7 @@ def main() -> int:
             shutil.copy2(path, destination / name)
     (ROOT / "dist/SHA256SUMS").write_text("".join(f"{digest}  {name}\n" for name, digest in hashes.items()),
                                          encoding="ascii")
-    shutil.make_archive(str(ROOT / "dist/verification-0.2.0"), "zip", destination)
+    shutil.make_archive(str(ROOT / "dist" / f"verification-{version}"), "zip", destination)
     print(f"Release evidence saved to {destination}; source commit {provenance['commit']}")
     return 0
 

@@ -4,12 +4,18 @@ import pytest
 
 from agent_eval_redteam import mcp_server
 from agent_eval_redteam.adapters.repositories import Repository
+from agent_eval_redteam.domain.policies import GATE_POLICY_VERSION
 from agent_eval_redteam.domain.services import EvalPlatform, bootstrap
 
 HARDENED = "support-bot@1.0.0"
 CANDIDATE = "support-bot@1.1.0-rc1"
 NAIVE = "support-bot-naive@0.9.0"
 SUITE = ("support-core", "1.0.0")
+
+
+def gate_payload(outcome="review"):
+    return {"decision": {"outcome": outcome, "policy_version": GATE_POLICY_VERSION,
+                         "reasons": ["Synthetic test gate"], "overridable": outcome == "review"}}
 
 
 @pytest.fixture

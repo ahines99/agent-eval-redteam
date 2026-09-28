@@ -24,7 +24,7 @@ from agent_eval_redteam.domain.policies import PolicyViolation
 from agent_eval_redteam.domain.services import bundled_suites
 from agent_eval_redteam.workflows import primary
 
-from .conftest import CANDIDATE, HARDENED, SUITE, run
+from .conftest import CANDIDATE, HARDENED, SUITE, gate_payload, run
 
 pytestmark = pytest.mark.anyio
 
@@ -119,7 +119,7 @@ async def test_checkpoint_rolls_back_artifact_when_audit_insert_fails(authorized
     event = AuditEvent(run_id=rid, step="Gate release", event_type="step_completed", actor="alice",
                        created_at=datetime.now(UTC)).model_copy(update={"event_type": None})
     with pytest.raises(IntegrityError):
-        authorized.repo.checkpoint(rid, "Gate release", {"decision": {"outcome": "review"}},
+        authorized.repo.checkpoint(rid, "Gate release", gate_payload(),
                                    [event], pause=True)
     assert authorized.repo.artifacts(rid) == {}
     assert authorized.repo.get_run(rid)["status"] == "pending"
@@ -204,7 +204,7 @@ async def test_baseline_search_has_no_nonaccepted_run_cutoff(authorized):
                                          suite_version=SUITE[1], scorecard=metrics["scorecard"],
                                          outcomes=metrics["case_outcomes"])
         authorized.repo.update_run(rid, status="needs_review")
-        authorized.repo.save_artifact(rid, "Gate release", {"decision": {"outcome": "review"}})
+        authorized.repo.save_artifact(rid, "Gate release", gate_payload())
     result = await run(authorized, CANDIDATE)
     assert result.comparison["baseline_run_id"] == base.run_id
 

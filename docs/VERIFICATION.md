@@ -2,17 +2,23 @@
 
 Updated September 27, 2026. This is the current status; audit reports preserve earlier snapshots.
 
-The project is a local-first 0.2.0 release with an authenticated shared-server option.
+The project is a local-first 0.2.1 release with an authenticated shared-server option.
 The public website is a static demonstration; it does not accept credentials or run models.
+The final audit found and the corrective release fixes a stale-review gate bypass. Full
+portfolio finalization remains open for the independently human-authored benchmark (F12).
 
 ## Verified locally
 
-- Windows / Python 3.14 and Linux / Python 3.12: full suite passed, including PostgreSQL.
-  The recorded complete local runs each passed 287 tests; Windows line coverage was 95.50%.
-  Subsequent focused tests and the expanded remote matrix are recorded in release evidence and CI.
+- Windows / Python 3.14: 306 tests passed with real PostgreSQL enabled, 95.55% line coverage.
+  Earlier Linux / Python 3.12 verification and the current remote matrix are recorded in
+  release evidence and CI; the release manifest identifies each exact tested revision.
 - Ruff passes; mypy passes across 22 production source files.
-- PostgreSQL 17.11: eight backend tests pass, including independent connection contention,
-  fencing, capacity, transactional rollback, approval races and retained-data migration.
+- PostgreSQL 17.11: sixteen backend tests pass, including independent connection contention,
+  fencing, capacity, transactional rollback, retained-data migration, stale approvals,
+  historical eligibility, immutable blocks and both block/approval transaction orders.
+- Version-wide blocks are rechecked transactionally at gate publication and approval.
+  Current release eligibility and baseline acceptance include later blocks, while historical
+  artifacts and approval records remain unchanged. Reports identify the blocking run IDs.
 - Linux Docker image builds and passes behavioral installed-package verification.
 - Compose migrations and a real MCP stdio walkthrough pass across process restart using
   the persistent named volume.
@@ -46,9 +52,9 @@ The public website is a static demonstration; it does not accept credentials or 
 | F08 durable evidence | `docs/evidence/`, CI test/artifact uploads, `scripts/release_evidence.py` |
 | F09 claim accuracy | Current docs distinguish implemented, locally verified and externally executed capabilities |
 | F10 maintenance surface | Changelog, contribution guide, metadata and enabled GitHub private vulnerability reporting |
-| F11 compatibility | Published v0.2.0 matrix passed on Linux 3.12/3.13/3.14 and Windows 3.12: 281 tests passed and eight PostgreSQL tests skipped per matrix job; all eight passed in the separate PostgreSQL job. The human-review addendum adds a preservation/freshness regression check |
-| F12 scorer characterization | Alexander Hines approved all 33 rows / 35 labels on 2026-09-27; reviewed revision and regenerated evidence preserve all nine disagreements. Human review complete; development-exposed corpus |
-| F13 PostgreSQL concurrency | Eight actual PostgreSQL tests passed; contracts cover separate connections and competing actors |
+| F11 compatibility | Linux 3.12/3.13/3.14 and Windows 3.12 are covered by the remote matrix; Windows 3.14 is tested locally. Exact release counts and revisions are retained in the evidence bundle |
+| F12 scorer characterization | **Partially complete.** Alexander Hines approved the existing 33 rows / 35 labels; all nine disagreements remain. The explicitly retained independent, held-out human benchmark and walkthrough are still pending |
+| F13 PostgreSQL concurrency | Sixteen actual PostgreSQL tests passed; contracts include independent connections and serialized version-wide block/approval ordering |
 | F14 live model validation | Real Sonnet 5 run complete: 21 requests, $0.10417 estimated token cost, 1/10 pass, review gate; preserved first result |
 | F15 shared operations | Local HTTP operations and private Docker HTTPS deployment verified; no publicly hosted evaluation service claimed |
 | F16 telemetry | Real official Collector transport verified; no external trace storage/UI claim |
@@ -63,12 +69,17 @@ See [live validation](live-validation.md) for the controls and billing limitatio
 Alexander Hines approved every row of [the label sheet](scorer-human-review.md) without
 corrections on September 27, 2026. The [reviewed revision](../benchmarks/scorer-challenge.human-reviewed.json)
 and [regenerated evidence](evidence/scorer-characterization.human-reviewed.json) preserve the
-original labels and all nine disagreements. This closes the remaining human-review item;
-the corpus remains development-exposed and is not a blind accuracy benchmark.
+original labels and all nine disagreements. This completed review of that existing corpus;
+it did not fulfill the original held-out independence criterion. The owner explicitly required
+a separate independent human-authored benchmark after the final audit. Its
+[authoring packet](independent-benchmark-authoring.md) is ready; cases, labels and independent
+walkthrough review are pending. No AI-generated substitute is being counted as human authorship.
 
 The published v0.2.0 artifacts preserve the pre-review snapshot. Its release includes a
 separate human-review addendum tied to the later review commit; original package and evidence
-checksums remain unchanged. All F01-F16 items are complete within the scope documented above.
+checksums remain unchanged. Version 0.2.1 corrects the gate defect found after that release.
+F01-F11 and F13-F16 are supported within the documented scope; **F12 and therefore full
+portfolio finalization remain open**. See the [final audit resolution](audits/2026-09-27/FINAL_RESOLUTION.md).
 
 No production certification, signed administrator-resistant evidence, real-data compliance
 or generalized model-safety result is asserted. Those remain outside this synthetic portfolio.

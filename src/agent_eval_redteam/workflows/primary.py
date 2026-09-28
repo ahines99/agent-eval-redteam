@@ -324,7 +324,11 @@ async def score_traces(ctx: RunContext, env: EvalEnvironment) -> StepResult:
     })
 
 
-def release_decision(repo: Repository, run_id: str, gate: dict[str, Any] | None) -> str:
+def release_decision(repo: Repository, run_id: str, gate: dict[str, Any] | None, *,
+                     blocked_run_ids: list[str] | None = None) -> str:
+    blocks = blocked_run_ids if blocked_run_ids is not None else repo.version_blocks(run_id)
+    if blocks:
+        return "blocked"
     if gate is None:
         return "pending"
     outcome = gate["decision"]["outcome"]
@@ -392,13 +396,7 @@ async def gate_release(ctx: RunContext, env: EvalEnvironment) -> StepResult:
     card = Scorecard.model_validate(ctx.artifacts["Score traces"]["scorecard"])
     comparison = ctx.artifacts.get("Compare versions/models")
     gating = comparison if comparison and comparison.get("baseline_run_id") else None
-    prior_blocks = []
-    for other in env.repo.runs_for_agent(ctx.run["agent_id"]):
-        if other["run_id"] == ctx.run_id:
-            continue
-        gate = env.repo.artifacts(other["run_id"]).get(GATE_STEP)
-        if gate and gate["payload"]["decision"]["outcome"] == GateOutcome.BLOCK:
-            prior_blocks.append(other["run_id"])
+    prior_blocks = [rid for rid in env.repo.version_blocks(ctx.run_id) if rid != ctx.run_id]
     decision = evaluate_gate(card, gating, prior_blocks)
     # The findings behind the decision, so every gate reason traces back to stored evidence.
     relevant = {GateOutcome.BLOCK: {"critical"}, GateOutcome.REVIEW: {"major", "minor"}}.get(decision.outcome, set())

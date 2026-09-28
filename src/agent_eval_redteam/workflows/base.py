@@ -57,7 +57,7 @@ class RunStore(Protocol):
     def audit(self, event: AuditEvent) -> None: ...
     def transition_run(self, run_id: str, events: list[AuditEvent], **values: Any) -> None: ...
     def checkpoint(self, run_id: str, step: str, payload: dict[str, Any], events: list[AuditEvent],
-                   *, pause: bool) -> str: ...
+                   *, pause: bool) -> tuple[dict[str, Any], bool]: ...
     def get_approval(self, run_id: str, gate: str) -> dict[str, Any] | None: ...
 
 
@@ -102,9 +102,9 @@ async def run_steps(ctx: RunContext, steps: Sequence[Step], store: RunStore, *, 
         events = [_event(ctx, step.name, "step_completed", artifact_hash=digest, schema_version=SCHEMA_VERSION)]
         if result.pause:
             events.append(_event(ctx, step.name, "paused_for_review"))
-        store.checkpoint(ctx.run_id, step.name, result.artifact, events, pause=result.pause)
-        ctx.artifacts[step.name] = result.artifact
-        if result.pause:
+        artifact, pause = store.checkpoint(ctx.run_id, step.name, result.artifact, events, pause=result.pause)
+        ctx.artifacts[step.name] = artifact
+        if pause:
             return Status.NEEDS_REVIEW
 
     store.transition_run(ctx.run_id, [_event(ctx, "workflow", "run_completed")],

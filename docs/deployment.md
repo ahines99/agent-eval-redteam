@@ -118,7 +118,7 @@ the image or use the CI database password outside its disposable CI service.
 ## PostgreSQL integration locally
 
 Set `TEST_POSTGRES_URL` to a disposable database whose user may create schemas, then run
-`uv run --frozen pytest tests/test_delivery.py tests/test_postgres_contracts.py -m postgres -v`.
+`uv run --frozen pytest tests/test_delivery.py tests/test_postgres_contracts.py tests/test_version_blocks.py -m postgres -v`.
 Each test creates and drops
 only a UUID-named schema. Without that variable, PostgreSQL tests explicitly skip.
 They verify migrations, model/schema agreement, the full control-agent demo and gate

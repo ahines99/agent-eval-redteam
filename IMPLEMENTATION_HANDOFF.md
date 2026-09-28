@@ -1,4 +1,4 @@
-# Current implementation handoff - 0.2.0 (2026-09-27)
+# Current implementation handoff - 0.2.1 (2026-09-27)
 
 For the latest portfolio completion state and verification, see [docs/VERIFICATION.md](docs/VERIFICATION.md).
 
@@ -17,7 +17,8 @@ not as current instructions or proof that every possible defect has been elimina
   unresolved review gates. Persisted work is reused; a crash before trace persistence can
   repeat an external provider call. No exactly-once billing guarantee is made.
 - Baselines and monitoring respect suite/world/scorer/gate identity. Prior blocks bind the
-  agent version across suites; caller-provided baselines remain informational.
+  agent version across suites and older pending/approved runs; caller-provided baselines remain
+  informational. Gate publication and approval serialize through the agent's database row.
 - Authorization immediately before each case adapter invocation; benign shared world;
   expanded disclosure checks; bounded suite/run/HTTP admission.
 - Optional authenticated HTTP: hashed service tokens, server-derived actors, scopes and
@@ -26,9 +27,8 @@ not as current instructions or proof that every possible defect has been elimina
 - Alembic initial/lease migrations; dependency lock and audit tooling; CI definitions;
   Docker/Compose; MIT license; opt-in OpenTelemetry export with filtered attributes.
 - SQLite migration tests, actual stdio process restart and authenticated HTTP socket tests,
-  repeated persistent demo, build and installed-wheel smoke. Locked Python 3.12 and 3.14
-  environments each passed 242 tests with one PostgreSQL integration test skipped in the
-  final local verification; measured Python 3.12 line coverage was 95.43%.
+  persistent demo, build and installed-wheel smoke. The corrective release passed 306 tests
+  locally on Windows/Python 3.14 with real PostgreSQL enabled and 95.55% line coverage.
 - Actual local terminal recording at [docs/demo.cast](docs/demo.cast), plus a three-minute
   narration script. The recording preserves real short execution timing; it is not a
   narrated three-minute video.
@@ -38,7 +38,11 @@ not as current instructions or proof that every possible defect has been elimina
 
 ## Remaining validation and accepted limitations
 
-- Remote CI and an operational shared deployment require separate release-specific evidence.
+- Linux/Windows CI, PostgreSQL, container, private HTTPS and operations verification have
+  actual execution evidence; use the source-bound release bundle for exact revisions.
+- F12 remains open: an independent human-authored held-out benchmark and walkthrough are
+  explicitly required. Existing human approval covers the development-exposed 33-row set.
+  The [authoring packet](docs/independent-benchmark-authoring.md) is ready for an unexposed author.
 - The first live Sonnet 5 run is preserved in docs/evidence/live-validation.json: 1/10
   cases passed under existing rules, no critical findings, review gate, $0.10417 estimated
   token cost. Scored cost thresholds are not a provider spending cap.
@@ -48,7 +52,8 @@ not as current instructions or proof that every possible defect has been elimina
   provisioning, backup/restore validation and real-data retention/encryption decisions.
 - Phrase checks, PII detection and security classification are bounded heuristics. Scripted
   controls establish behavior on declared cases, not general model safety or production quality.
-- A narrated video and publication are optional follow-up; nothing has been published.
+- The public repository, GitHub releases and static Pages walkthrough are published. Human
+  narration remains optional; the edited 150-second player and original recording are available.
 
 Current references: [README](README.md), [architecture](docs/architecture.md),
 [data contracts](docs/data_contracts.md), [threat model](docs/threat_model.md),

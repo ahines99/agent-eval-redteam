@@ -5,10 +5,12 @@ from __future__ import annotations
 import uuid
 from contextlib import contextmanager
 from contextvars import ContextVar
+from copy import deepcopy
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from pydantic import ValidationError
 from sqlalchemy import (
     JSON,
     Boolean,
@@ -36,8 +38,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.pool import StaticPool
 
 from ..domain.models import AuditEvent, Confidence, EvidenceRef, Finding, canonical_hash
-from ..domain.policies import Authorization, PolicyViolation
-from ..domain.project_models import AgentRecord, EvalSuite, Trace
+from ..domain.policies import GATE_POLICY_VERSION, Authorization, PolicyViolation
+from ..domain.project_models import AgentRecord, EvalSuite, GateDecision, GateOutcome, Trace
 
 NAMESPACE = uuid.UUID("7f1d2c3e-4b5a-4c6d-9e8f-0a1b2c3d4e5f")
 LEASE_SECONDS = 120
@@ -381,18 +383,25 @@ class Repository:
                 c.execute(insert(audit_events).values(**event.model_dump(mode="python")))
 
     def checkpoint(self, run_id: str, step: str, payload: dict[str, Any], events: list[AuditEvent],
-                   *, pause: bool) -> str:
+                   *, pause: bool) -> tuple[dict[str, Any], bool]:
         """The artifact, audit events and pause state commit together or not at all."""
-        digest = canonical_hash(payload)
         with self.engine.begin() as c:
+            if step == "Gate release":
+                payload = self._prepare_gate(c, run_id, payload)
+                pause = payload["decision"]["outcome"] == GateOutcome.REVIEW
             self._fence(c, run_id)
+            digest = canonical_hash(payload)
             c.execute(insert(run_artifacts).values(run_id=run_id, step=step, payload=payload,
                                                    content_hash=digest, created_at=now()))
             for event in events:
+                if step == "Gate release" and event.event_type == "paused_for_review" and not pause:
+                    continue
+                if event.event_type == "step_completed":
+                    event = event.model_copy(update={"payload": {**event.payload, "artifact_hash": digest}})
                 c.execute(insert(audit_events).values(**event.model_dump(mode="python")))
             c.execute(update(workflow_runs).where(workflow_runs.c.run_id == run_id).values(
                 status="needs_review" if pause else "running", current_step=step, updated_at=now()))
-        return digest
+        return payload, pause
 
     def create_run(self, *, run_id: str, agent_id: str, suite_id: str, suite_version: str, requested_by: str,
                    idempotency_key: str | None, baseline_run_id: str | None) -> bool:
@@ -428,12 +437,16 @@ class Repository:
                                                                                            updated_at=now()))
 
     def save_artifact(self, run_id: str, step: str, payload: dict[str, Any]) -> str:
-        digest = canonical_hash(payload)
         with self.engine.begin() as c:
+            if step == "Gate release":
+                payload = self._prepare_gate(c, run_id, payload)
             self._fence(c, run_id)
+            digest = canonical_hash(payload)
             exists = c.execute(select(run_artifacts.c.step).where(run_artifacts.c.run_id == run_id,
                                                                   run_artifacts.c.step == step)).first()
             if exists:
+                if step == "Gate release":
+                    raise PolicyViolation("committed release gates are immutable")
                 c.execute(update(run_artifacts).where(run_artifacts.c.run_id == run_id, run_artifacts.c.step == step)
                           .values(payload=payload, content_hash=digest))
             else:
@@ -555,10 +568,68 @@ class Repository:
 
     # ------------------------------------------------------------ approvals, metrics, audit
 
+    def _lock_agent_for_run(self, c: Connection, run_id: str) -> str:
+        """Serialize gate publication and approval for a version, across processes/backends.
+
+        Updating a non-key column takes PostgreSQL's row lock or SQLite's writer lock.
+        All gate writers acquire this lock before the execution fence or artifact writes.
+        """
+        agent_id: str = c.execute(select(workflow_runs.c.agent_id).where(
+            workflow_runs.c.run_id == run_id)).scalar_one()
+        c.execute(update(agents).where(agents.c.agent_id == agent_id).values(config_hash=agents.c.config_hash))
+        return agent_id
+
+    @staticmethod
+    def _version_blocks(c: Connection, agent_id: str) -> list[str]:
+        rows = c.execute(select(run_artifacts).join(
+            workflow_runs, workflow_runs.c.run_id == run_artifacts.c.run_id).where(
+                workflow_runs.c.agent_id == agent_id, run_artifacts.c.step == "Gate release")
+            .order_by(run_artifacts.c.run_id)).mappings().all()
+        blocked = []
+        for row in rows:
+            if canonical_hash(row["payload"]) != row["content_hash"]:
+                raise PolicyViolation(f"artifact integrity check failed: {row['run_id']}/Gate release")
+            try:
+                decision = GateDecision.model_validate(row["payload"]["decision"])
+            except (KeyError, TypeError, ValidationError) as exc:
+                raise PolicyViolation(f"invalid committed release gate: {row['run_id']}") from exc
+            if decision.outcome == GateOutcome.BLOCK:
+                blocked.append(row["run_id"])
+        return blocked
+
+    def version_blocks(self, run_id: str) -> list[str]:
+        """Committed blocks remain effective even if a run's later monitoring step failed."""
+        with self.engine.connect() as c:
+            agent_id: str = c.execute(select(workflow_runs.c.agent_id).where(
+                workflow_runs.c.run_id == run_id)).scalar_one()
+            return self._version_blocks(c, agent_id)
+
+    def _prepare_gate(self, c: Connection, run_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        agent_id = self._lock_agent_for_run(c, run_id)
+        blocked = [rid for rid in self._version_blocks(c, agent_id) if rid != run_id]
+        result = deepcopy(payload)
+        decision = GateDecision.model_validate(result["decision"])
+        if blocked:
+            reason = (f"this agent version was already blocked in run(s) {blocked[:3]}; fix the agent and "
+                      "register a new version")
+            reasons = list(decision.reasons)
+            if reason not in reasons:
+                reasons.append(reason)
+            result["decision"] = GateDecision(outcome=GateOutcome.BLOCK, policy_version=GATE_POLICY_VERSION,
+                                              overridable=False, reasons=reasons).model_dump(mode="json")
+        result["prior_blocks"] = blocked
+        return result
+
     def insert_approval(self, *, run_id: str, gate: str, decision: str, approver: str, reason: str,
                         override: bool, audit_event: AuditEvent | None = None) -> bool:
         try:
             with self.engine.begin() as c:
+                if gate == "Gate release":
+                    agent_id = self._lock_agent_for_run(c, run_id)
+                    blocked = self._version_blocks(c, agent_id)
+                    if decision == "approve" and blocked:
+                        raise PolicyViolation(f"agent version is blocked by run(s) {blocked[:3]}; "
+                                              "approval cannot override a version-wide block")
                 c.execute(insert(approvals).values(approval_id=str(uuid.uuid4()), run_id=run_id, gate=gate,
                                                    decision=decision, approver=approver, reason=reason,
                                                    override=override, created_at=now()))

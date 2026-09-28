@@ -5,13 +5,13 @@ deterministic rules, and stop at a release gate when human review is required. T
 checks factuality, tools, permissions, injection resistance, data disclosure, citations,
 calibration, recovery, latency, estimated cost and repeatability. It never deploys an agent.
 
-Version **0.2.0** is a local-first Python/MCP application with an optional authenticated
+Version **0.2.1** is a local-first Python/MCP application with an optional authenticated
 HTTP server. For a quick review, open the [browser demo](docs/demo.html), read the
 [project case study](docs/case-study.md), or try the offline command below.
 
 [![Preview of the three control-agent outcomes](docs/demo-preview.png)](https://ahines99.github.io/agent-eval-redteam/)
 
-[Play the 2:30 walkthrough](https://ahines99.github.io/agent-eval-redteam/) ? [Inspect scorer limitations](docs/scorer-characterization.md) ? [Read operational evidence](docs/operations-verification.md)
+[Play the 2:30 walkthrough](https://ahines99.github.io/agent-eval-redteam/) | [Inspect scorer limitations](docs/scorer-characterization.md) | [Read operational evidence](docs/operations-verification.md)
 
 ## Try the offline demo
 
@@ -99,7 +99,10 @@ Scoring requires the complete expected trace manifest and verifies stored eviden
 The release baseline is the latest accepted run of the same agent name with matching
 suite version, suite content, sandbox world, scorer and gate-policy identity. A supplied
 `baseline_run_id` creates a separate informational comparison. A previously blocked
-agent version remains blocked across suites.
+agent version remains blocked across suites, including older pending or previously approved runs.
+Historical gate artifacts and approvals are retained; current release decisions and accepted
+baseline selection reflect all committed blocks of that version. Block publication and approval
+serialize through a database transaction shared by all workers evaluating that version.
 
 ## MCP surface
 
