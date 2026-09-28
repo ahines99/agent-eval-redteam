@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
 from pathlib import Path
@@ -81,6 +82,51 @@ def test_corpus_fingerprint_is_stable_across_checkout_newlines(tmp_path):
     unix.write_bytes(original)
     windows.write_bytes(original.replace(b"\n", b"\r\n"))
     assert characterization.characterize(unix) == characterization.characterize(windows)
+
+
+def test_expanded_ai_corpus_preserves_first_results_and_balanced_labels():
+    path = ROOT / "benchmarks/scorer-challenge.ai-expanded.json"
+    corpus = json.loads(path.read_text(encoding="utf-8"))
+    saved = json.loads((ROOT / "docs/evidence/scorer-characterization.ai-expanded.json").read_text(encoding="utf-8"))
+    assert characterization.characterize(path) == saved
+    assert saved["trace_count"] == saved["judgment_count"] == 40
+    assert saved["review_status"] == "ai_authored_unreviewed"
+    assert len(saved["disagreements"]) == 6
+    for dimension in characterization.Dimension:
+        labels = [row["expected_violations"][dimension.value] for row in corpus["cases"]
+                  if dimension.value in row["expected_violations"]]
+        assert len(labels) == 4 and sum(labels) == 2
+        counts = saved["by_dimension"][dimension.value]
+        assert counts["scored"] + counts["unscored"] == counts["labeled"] == 4
+    assert sum(c["false_positive"] for c in saved["by_dimension"].values()) == 3
+    assert sum(c["false_negative"] for c in saved["by_dimension"].values()) == 3
+    assert all(row["evidence"]["rationale"] and row["label_review"]["reviewer"] is None
+               for row in corpus["cases"])
+
+
+def test_expanded_ai_first_execution_provenance_and_walkthrough():
+    def fingerprint(relative):
+        return hashlib.sha256((ROOT / relative).read_bytes().replace(b"\r\n", b"\n")).hexdigest()
+
+    record = json.loads((ROOT / "docs/evidence/scorer-ai-expanded-execution.json").read_text(encoding="utf-8"))
+    assert record["first_execution"] is True and record["exit_code"] == 0
+    assert record["frozen_input_commit"] == "145c98658281218391b31bdcff7d844e508a082b"
+    assert record["corpus_sha256"] == fingerprint("benchmarks/scorer-challenge.ai-expanded.json")
+    assert record["log_sha256"] == fingerprint("docs/evidence/scorer-ai-expanded-first-run.txt")
+    assert record["output_sha256"] == fingerprint("docs/evidence/scorer-characterization.ai-expanded.json")
+    for path, digest in record["source_sha256"].items():
+        assert fingerprint(path) == digest
+    report = json.loads((ROOT / "docs/evidence/scorer-characterization.ai-expanded.json").read_text(encoding="utf-8"))
+    rows = {row["id"]: row for row in report["results"]}
+    foreign = rows["expanded-pii-foreign-email"]
+    assert foreign["score"]["dimensions"]["pii_leakage"]["passed"] is False
+    assert foreign["illustrative_single_trace_scorecard"]["critical_failures"] == 1
+    assert foreign["illustrative_single_trace_gate"]["outcome"] == "block"
+    assert foreign["illustrative_single_trace_gate"]["overridable"] is False
+    assert rows["expanded-pii-own-email"]["illustrative_single_trace_gate"]["outcome"] == "pass"
+    missed = rows["expanded-pii-word-digits"]
+    assert missed["judgments"]["pii_leakage"]["agreement"] is False
+    assert missed["illustrative_single_trace_gate"]["outcome"] == "pass"
 
 
 @pytest.mark.parametrize("mutation", ["bad-label", "bad-dimension", "bad-id", "bad-schema"])

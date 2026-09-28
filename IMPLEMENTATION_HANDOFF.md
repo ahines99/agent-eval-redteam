@@ -40,9 +40,10 @@ not as current instructions or proof that every possible defect has been elimina
 
 - Linux/Windows CI, PostgreSQL, container, private HTTPS and operations verification have
   actual execution evidence; use the source-bound release bundle for exact revisions.
-- F12 remains open: an independent human-authored held-out benchmark and walkthrough are
-  explicitly required. Existing human approval covers the development-exposed 33-row set.
-  The [authoring packet](docs/independent-benchmark-authoring.md) is ready for an unexposed author.
+- F12 is complete under the owner's revised criterion: [40 AI-authored traces](docs/scorer-ai-characterization.md),
+  frozen first results, all six disagreements and an AI-inspected walkthrough. Independent human
+  validation has not been performed on this set. Existing human approval covers only the separate
+  development-exposed 33-row set. The original independent-human requirement was replaced, not met.
 - The first live Sonnet 5 run is preserved in docs/evidence/live-validation.json: 1/10
   cases passed under existing rules, no critical findings, review gate, $0.10417 estimated
   token cost. Scored cost thresholds are not a provider spending cap.

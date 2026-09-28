@@ -3,6 +3,16 @@
 This file describes repository changes. A version heading does not imply a published
 package, tag or successful external deployment; see release artifacts and validation evidence.
 
+## AI benchmark evidence addendum - 2026-09-27
+
+- Recorded the owner's explicit replacement of F12's independent-human requirement with
+  transparent AI-authored characterization; independent human validation is not claimed.
+- Froze 40 traces before scoring, with two compliant and two violation labels per dimension.
+  Preserved the first report, execution log, source/input hashes and all six disagreements.
+- Added per-dimension counts, a tool-evidence-to-gate walkthrough including a missed disclosure,
+  reproducibility/provenance checks and current completion accounting under the revised scope.
+- Production code, package version, earlier corpora/reports and original release assets are unchanged.
+
 ## 0.2.1 - 2026-09-27
 
 - Fixed approval of an older pending review after another run blocked the same agent version.
@@ -22,7 +32,7 @@ package, tag or successful external deployment; see release artifacts and valida
 - Recorded Alexander Hines's approval of all 33 scorer challenge rows and 35 dimension labels.
 - Preserved the original corpus/report and added a separately hashed reviewed revision and
   regenerated evidence. Labels, traces and all nine scorer disagreements are unchanged.
-- Closed the portfolio's remaining human-review item; original v0.2.0 packages and evidence
+- Completed human label review of the existing corpus; original v0.2.0 packages and evidence
   remain unchanged, with review evidence published as a separate release addendum.
 
 ## 0.2.0 - 2026-09-27

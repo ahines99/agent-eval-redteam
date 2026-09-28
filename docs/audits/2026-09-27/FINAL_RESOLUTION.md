@@ -2,12 +2,12 @@
 
 The [three-agent audit](FINAL_AUDIT.md) reviewed commit `517f96c` and found a new gate defect.
 The earlier "all remaining items complete" assessment was too strong. This record tracks the
-correction in 0.2.1 and the explicitly retained independent-benchmark requirement.
+correction in 0.2.1 and the owner's subsequent explicit benchmark scope decision.
 
 | Finding | Disposition | Evidence |
 |---|---|---|
 | P1 stale review bypasses a version-wide block | Corrected in 0.2.1 | `tests/test_version_blocks.py`; SQLite and PostgreSQL end-to-end and transaction-order tests |
-| P2 F12 completion overstates independent evidence | Documentation corrected; original requirement remains open | Owner selected an independent human-authored benchmark; `docs/independent-benchmark-authoring.md` |
+| P2 F12 completion overstates independent evidence | Closed under explicitly revised scope; independence is not claimed | Owner accepted AI-authored characterization; `docs/ai-benchmark-protocol.md` and `docs/scorer-ai-characterization.md` |
 | P3 presentation encoding | README separators repaired; release descriptions normalized during publication | README link row and published release notes |
 
 ## Gate semantics and concurrency
@@ -46,19 +46,22 @@ committed gates, so stored 0.2.0 runs receive the effective block when served by
 - Ruff and mypy validate the production changes. The corrected release's evidence bundle
   binds its CI results and artifact checksums to the exact source commit.
 
-## Independent benchmark remains required
+## Benchmark scope decision and completion
 
 The existing 33-row/35-label corpus was authored with access to the scorer. Alexander Hines's
 approval is retained and valid for those labels, but it does not make them held-out evidence.
-After the audit, the owner explicitly chose to require the independent benchmark rather
-than narrow F12 to the existing characterization.
+After the audit, the owner initially retained the independent benchmark. Subsequently, when
+asked explicitly about replacing that requirement, the owner answered: "Yes—use the AI-authored
+benchmark (recommended for this portfolio)." The original independence criterion was replaced,
+not fulfilled. No independent human validation is claimed for the new corpus.
 
-An unexposed human author must provide new synthetic traces, evidence, labels, rationales and
-an authorship declaration using the authoring packet. Clerical transcription is returned for
-their confirmation, then frozen before the first scoring run. The first results and failures
-must be preserved, and the author/reviewer must inspect an evidence-to-score-to-gate walkthrough.
-No cases or labels have been manufactured to claim this work is complete.
+The [protocol](../../ai-benchmark-protocol.md) and 40-trace input were committed before execution
+at `145c986`. The first execution preserved its log, exact source/input hashes, complete results
+and all six disagreements: three false positives and three false negatives, no unscored labels.
+The [report](../../scorer-ai-characterization.md) records per-dimension counts and an AI-inspected
+evidence-to-score-to-gate walkthrough, including a disclosure the scorer missed. No scorer or
+label was changed to improve the result; the earlier human-reviewed corpus remains unchanged.
 
-The corrected software release can be published while this research-evidence requirement is
-pending. The complete portfolio goal must not be marked achieved until the independent input
-has been incorporated and verified.
+F12 is complete under that revised criterion. The authoring packet is retained for optional
+future independent research. Package and historical evidence provenance remain distinct from
+the later evidence addendum; current verification and release manifests identify each revision.

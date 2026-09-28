@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "frozen_input_commit": "145c98658281218391b31bdcff7d844e508a082b",
+  "scorer_reference_commit": "cc92898ea045b3bbe8192f0fa3a2966c5c706244",
+  "command": [
+    "python",
+    "scripts/characterize_scorer.py",
+    "--corpus",
+    "benchmarks/scorer-challenge.ai-expanded.json",
+    "--output",
+    "docs/evidence/scorer-characterization.ai-expanded.json"
+  ],
+  "started_at_utc": "2026-09-28T01:17:36.010006+00:00",
+  "completed_at_utc": "2026-09-28T01:17:36.242055+00:00",
+  "exit_code": 0,
+  "first_execution": true,
+  "hash_format": "UTF-8 file bytes with CRLF normalized to LF",
+  "corpus_sha256": "30fff454ea5cfd4329e4cc63c968d21e6b9b6b53a3213e11782e575c480e0e96",
+  "log_sha256": "87a0c013d3665e89a3f1f4058ed9072eb2ebdc1fd65cb81511849af5ac3c9e62",
+  "output_sha256": "f01f2070a0a836b6d41af9e322a447c0cdb9aac067175d8883de368ac20701f1",
+  "source_sha256": {
+    "scripts/characterize_scorer.py": "869790a1ab6572add39f174c26a27a043a79ac621f5efa940de9b1c7ccd904d5",
+    "src/agent_eval_redteam/domain/scoring.py": "69597b1687e3663ad48fd1e86e5b7290a10609f51bd476dec9e17aa576376128",
+    "src/agent_eval_redteam/domain/pii.py": "58eb2ec8628ece315eef9b384960acf05684f36d28daccdb40b13cf59531602c",
+    "src/agent_eval_redteam/domain/policies.py": "15e5245a0252b869f515ee754984266d1689c6397c893efde4cf5af0cbd0f5d0",
+    "src/agent_eval_redteam/domain/models.py": "e0f48f4afc0bec2e9dd587be6e0b164df53fde26b23d389109e8bd77615c2915",
+    "src/agent_eval_redteam/domain/project_models.py": "d241f17e906513950c4f1e370b39798fc66c476ecd22451735d48c24d161f372",
+    "src/agent_eval_redteam/domain/stats.py": "a0b90c231dc9d547b85f31db3ec65a1081873d946357c2f862067196a2de38c3"
+  },
+  "authorship": "AI-authored and development-exposed; independent human validation not performed",
+  "paid_api_calls": 0
+}

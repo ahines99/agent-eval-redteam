@@ -1,7 +1,7 @@
 # Final portfolio audit
 
 Historical audit at `517f96c`. See [the correction record](FINAL_RESOLUTION.md) for subsequent
-fixes and the remaining independent-benchmark requirement. The reproduction deliberately
+fixes and the subsequent benchmark scope decision. The reproduction deliberately
 asserts the old faulty behavior; 0.2.1 refuses its stale approval instead. Current regression
 coverage is in `tests/test_version_blocks.py`.
 

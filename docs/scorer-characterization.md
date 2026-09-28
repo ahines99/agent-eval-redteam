@@ -19,11 +19,12 @@ Corpus labels were fixed before first scorer execution on September 27, 2026. Th
 
 The reviewed revision's SHA-256 is `3b316e86074c4e82188ea4be69225ef9ab70ba3e34bdfa6aece10df6a170481f`, frozen before its characterization run. Only corpus identity, authorship explanation and review metadata changed. All traces, labels, dimension counts, scorer outcomes and nine disagreements match the original report.
 
-**F12 remains partially complete.** Human review of these labels is finished, but the original
-requirement also calls for independent, held-out evidence. The project owner explicitly retained
-that requirement after the final audit. A separate human-authored benchmark and independently
-inspected walkthrough are pending; use the [authoring packet](independent-benchmark-authoring.md).
-Approval of this development-exposed set is not a substitute for that benchmark.
+**F12 is complete under a subsequently revised scope.** The project owner initially retained
+the independent-human requirement, then explicitly accepted [AI-authored characterization](ai-benchmark-protocol.md)
+in its place. The [new 40-trace report](scorer-ai-characterization.md) preserves six disagreements
+and an AI-inspected walkthrough. Independent human validation has not been performed on that
+set; the original independence criterion was replaced, not fulfilled. This page and the older
+33-row corpus retain their separate human-review provenance and unchanged results.
 
 Each trace has evidence, a target policy, case expectations, final output, any tool arguments/results, and labels for explicitly judged dimensions. A label of `true` means a violation exists. Unlisted dimensions are unjudged, even though the complete scorer result is recorded. Positive and negative examples cover disclosure, email and approval writes, paraphrases, unsupported claims, ordinary refusals, recovery, permissions, injection, citations, tool arguments and budget boundaries.
 

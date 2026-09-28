@@ -4,8 +4,9 @@ Updated September 27, 2026. This is the current status; audit reports preserve e
 
 The project is a local-first 0.2.1 release with an authenticated shared-server option.
 The public website is a static demonstration; it does not accept credentials or run models.
-The final audit found and the corrective release fixes a stale-review gate bypass. Full
-portfolio finalization remains open for the independently human-authored benchmark (F12).
+The final audit found and the corrective release fixes a stale-review gate bypass. F12 now
+has complete AI-authored characterization under an explicitly revised owner-approved scope.
+Independent human validation has not been performed on the new corpus; it is not claimed.
 
 ## Verified locally
 
@@ -53,7 +54,7 @@ portfolio finalization remains open for the independently human-authored benchma
 | F09 claim accuracy | Current docs distinguish implemented, locally verified and externally executed capabilities |
 | F10 maintenance surface | Changelog, contribution guide, metadata and enabled GitHub private vulnerability reporting |
 | F11 compatibility | Linux 3.12/3.13/3.14 and Windows 3.12 are covered by the remote matrix; Windows 3.14 is tested locally. Exact release counts and revisions are retained in the evidence bundle |
-| F12 scorer characterization | **Partially complete.** Alexander Hines approved the existing 33 rows / 35 labels; all nine disagreements remain. The explicitly retained independent, held-out human benchmark and walkthrough are still pending |
+| F12 scorer characterization | **Complete under revised scope.** Existing 33 rows / 35 labels retain human approval and nine disagreements. A separately frozen 40-trace AI-authored corpus has six disagreements, full provenance and an AI-inspected walkthrough. The owner explicitly replaced the independent-human criterion; independent validation is not claimed |
 | F13 PostgreSQL concurrency | Sixteen actual PostgreSQL tests passed; contracts include independent connections and serialized version-wide block/approval ordering |
 | F14 live model validation | Real Sonnet 5 run complete: 21 requests, $0.10417 estimated token cost, 1/10 pass, review gate; preserved first result |
 | F15 shared operations | Local HTTP operations and private Docker HTTPS deployment verified; no publicly hosted evaluation service claimed |
@@ -70,16 +71,22 @@ Alexander Hines approved every row of [the label sheet](scorer-human-review.md) 
 corrections on September 27, 2026. The [reviewed revision](../benchmarks/scorer-challenge.human-reviewed.json)
 and [regenerated evidence](evidence/scorer-characterization.human-reviewed.json) preserve the
 original labels and all nine disagreements. This completed review of that existing corpus;
-it did not fulfill the original held-out independence criterion. The owner explicitly required
-a separate independent human-authored benchmark after the final audit. Its
-[authoring packet](independent-benchmark-authoring.md) is ready; cases, labels and independent
-walkthrough review are pending. No AI-generated substitute is being counted as human authorship.
+it did not fulfill the original held-out independence criterion. The owner initially retained
+that criterion after the final audit, then explicitly accepted AI-authored characterization
+instead. [The scope decision and protocol](ai-benchmark-protocol.md) preserve that distinction.
+The [40-trace report](scorer-ai-characterization.md) records three false positives, three false
+negatives, no unscored labels and an AI-inspected walkthrough. Input and labels were committed
+before first scoring; its report, log and fingerprints are preserved. No AI-generated work is
+counted as independent human authorship or human label approval. The original independence
+criterion was replaced, not fulfilled; its authoring packet remains available for future work.
 
 The published v0.2.0 artifacts preserve the pre-review snapshot. Its release includes a
 separate human-review addendum tied to the later review commit; original package and evidence
 checksums remain unchanged. Version 0.2.1 corrects the gate defect found after that release.
-F01-F11 and F13-F16 are supported within the documented scope; **F12 and therefore full
-portfolio finalization remain open**. See the [final audit resolution](audits/2026-09-27/FINAL_RESOLUTION.md).
+F01-F16 are supported within the documented, owner-approved scope, including F12's explicitly
+revised criterion. The benchmark evidence addendum preserves the later source revision separately
+from the original 0.2.1 packages and verification ZIP. See the
+[final audit resolution](audits/2026-09-27/FINAL_RESOLUTION.md).
 
 No production certification, signed administrator-resistant evidence, real-data compliance
 or generalized model-safety result is asserted. Those remain outside this synthetic portfolio.
@@ -91,8 +98,9 @@ Use the commands in [CONTRIBUTING](../CONTRIBUTING.md), [deployment](deployment.
 The [private HTTPS check](tls-proxy.md) also runs in the container CI job.
 The release evidence manifest binds package hashes and test reports to a source commit;
 GitHub Actions independently records the exact revision for each run.
-The [six-job release run](https://github.com/ahines99/agent-eval-redteam/actions/runs/36358321371)
-passed on tagged commit `2a76eeb`; the release evidence includes that exact revision's CI record.
+The [six-job 0.2.1 release run](https://github.com/ahines99/agent-eval-redteam/actions/runs/36362488235)
+passed on tagged commit `cc92898e`; the original release evidence includes that exact revision's
+CI record. The later benchmark addendum records its own tested source commit and CI runs.
 
 The first remote matrix exposed a corpus fingerprint difference caused solely by CRLF/LF checkouts. The fingerprint now normalizes line endings; labels and all nine disagreements are unchanged. A regression test covers both checkout forms.
 

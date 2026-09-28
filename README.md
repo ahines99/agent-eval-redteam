@@ -13,6 +13,11 @@ HTTP server. For a quick review, open the [browser demo](docs/demo.html), read t
 
 [Play the 2:30 walkthrough](https://ahines99.github.io/agent-eval-redteam/) | [Inspect scorer limitations](docs/scorer-characterization.md) | [Read operational evidence](docs/operations-verification.md)
 
+The [expanded AI-authored benchmark](docs/scorer-ai-characterization.md) preserves six
+disagreements across 40 labeled traces. Its provenance and limits are explicit: independent
+human validation has not been performed on that set. See the [verification record](docs/VERIFICATION.md)
+for the accepted portfolio scope and release evidence.
+
 ## Try the offline demo
 
 Use Python 3.12 or 3.14:

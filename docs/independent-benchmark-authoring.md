@@ -1,5 +1,10 @@
 # Independent human benchmark authoring packet
 
+**Current scope:** the owner subsequently accepted [AI-authored characterization](ai-benchmark-protocol.md)
+for portfolio completion. This packet is retained for optional future independent research.
+Its requirements describe how to claim independent human evidence, not a remaining portfolio
+release blocker. The original independence criterion has not been fulfilled.
+
 This packet collects new human-authored evidence for portfolio item F12. It contains no
 test cases, proposed answers or labels. It is a submission form, not a completed benchmark.
 The existing 33-row human-reviewed challenge remains development-exposed and cannot be
@@ -187,6 +192,6 @@ python -m uv run --frozen python scripts/characterize_scorer.py --corpus benchma
 The paths above name future artifacts; this packet does not create them. Use a new
 output path for the first run and preserve it rather than overwriting it on a later run.
 
-F12 remains pending until independent human content, its approved frozen transcription,
-the executed characterization and the independently inspected walkthrough exist. A blank
+An independent-human validation claim remains unsupported until independent human content,
+its approved frozen transcription, executed characterization and inspected walkthrough exist. A blank
 form, an assistant's authored cases or approval of the old exposed set does not close it.
