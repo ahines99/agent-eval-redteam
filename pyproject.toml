@@ -26,7 +26,7 @@ Demo = "https://ahines99.github.io/agent-eval-redteam/"
 
 [project.optional-dependencies]
 # Live-model adapter. The deterministic reference agents need no network or API key.
-claude = ["anthropic>=1.0,<2"]
+claude = ["anthropic>=1.0,<3"]
 # Point DATABASE_URL at PostgreSQL instead of the default local SQLite file.
 postgres = ["psycopg[binary]>=3.2"]
 migrations = ["alembic>=1.13,<2"]
